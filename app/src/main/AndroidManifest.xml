@@ -61,6 +61,18 @@
             </intent-filter>
         </receiver>
 
+        <receiver
+            android:name=".widget.MotoOdoWidgetProvider"
+            android:exported="true"
+            android:label="MOTO ODO 1:1">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/moto_odo_widget_info" />
+        </receiver>
+
     </application>
 
 </manifest>

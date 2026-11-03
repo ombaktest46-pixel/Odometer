@@ -1,19 +1,17 @@
 package com.example.ui.components
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,300 +23,270 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.GpsFixed
-import androidx.compose.material.icons.filled.GpsNotFixed
-import androidx.compose.material.icons.filled.GpsOff
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.TwoWheeler
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.GpsFixed
+import androidx.compose.material.icons.outlined.GpsNotFixed
+import androidx.compose.material.icons.outlined.GpsOff
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.RestartAlt
+import androidx.compose.material.icons.outlined.TwoWheeler
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.GpsSignalQuality
 import com.example.model.MotionStatus
 import com.example.model.SpeedUnit
 import com.example.model.TelemetryFormatter
-import com.example.ui.theme.AmberWarning
-import com.example.ui.theme.CarbonBlack
-import com.example.ui.theme.CrimsonRed
-import com.example.ui.theme.CyberCyan
-import com.example.ui.theme.JetBrainsMonoFontFamily
-import com.example.ui.theme.NeonGreen
-import com.example.ui.theme.OrbitronFontFamily
-import com.example.ui.theme.PanelBorderGray
-import com.example.ui.theme.PanelDarkGray
-import com.example.ui.theme.PanelElevatedGray
-import com.example.ui.theme.TextMutedSlate
-import com.example.ui.theme.TextPrimaryWhite
-import com.example.ui.theme.TextSecondarySilver
-import kotlin.math.cos
-import kotlin.math.sin
+import com.example.model.WidgetThemeStyle
+import com.example.ui.theme.InterFontFamily
 
+/**
+ * Standardized Swiss/Minimalist Card component used across all screens.
+ * - Corner radius: 16.dp (14–18px spec)
+ * - Thin neutral border: 1.dp (#E7EAF0 in Light Mode, #2A3340 in Dark Mode)
+ * - Subtle shadow in Light Mode, clean elevated surface in Dark Mode
+ */
+@Composable
+fun MotoCard(
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+    contentPadding: PaddingValues = PaddingValues(18.dp),
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val cs = MaterialTheme.colorScheme
+    val isLight = cs.background.luminance() > 0.5f
+    val shape = RoundedCornerShape(16.dp)
+    val border = BorderStroke(1.dp, cs.outline)
+    val shadow = if (isLight) 1.dp else 0.dp
+
+    if (onClick != null) {
+        Surface(
+            onClick = onClick,
+            modifier = modifier.fillMaxWidth(),
+            shape = shape,
+            color = cs.surface,
+            border = border,
+            shadowElevation = shadow
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(contentPadding),
+                content = content
+            )
+        }
+    } else {
+        Surface(
+            modifier = modifier.fillMaxWidth(),
+            shape = shape,
+            color = cs.surface,
+            border = border,
+            shadowElevation = shadow
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(contentPadding),
+                content = content
+            )
+        }
+    }
+}
+
+/**
+ * Clean Minimalist Speed Card:
+ * - Large tabular speed number
+ * - KM/H unit
+ * - Minimal linear + segmented speed visualization
+ * - GPS signal status & Live telemetry status
+ */
 @Composable
 fun DigitalSpeedometerGauge(
     speedKmh: Float,
+    speedUnit: SpeedUnit,
     motionStatus: MotionStatus,
     gpsSignalQuality: GpsSignalQuality,
     gpsAccuracyMeters: Float,
-    speedUnit: SpeedUnit,
-    isSimulationActive: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val displayedSpeed = (speedKmh * speedUnit.multiplier).coerceAtLeast(0f)
-    val animatedSpeed by animateFloatAsState(
-        targetValue = displayedSpeed,
+    val cs = MaterialTheme.colorScheme
+    val displaySpeed = (speedKmh * speedUnit.multiplier).coerceAtLeast(0f)
+    val maxGaugeSpeed = if (speedUnit == SpeedUnit.KMH) 120f else 80f
+    val targetFraction = (displaySpeed / maxGaugeSpeed).coerceIn(0f, 1f)
+
+    val animatedProgress by animateFloatAsState(
+        targetValue = targetFraction,
         animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing),
-        label = "speed_anim"
+        label = "minimal_speed_bar"
     )
 
-    val maxScaleSpeed = if (speedUnit == SpeedUnit.KMH) 160f else 100f
-    val progress = (animatedSpeed / maxScaleSpeed).coerceIn(0f, 1f)
+    val isMoving = motionStatus == MotionStatus.MOVING
+    // Functional Color Hierarchy:
+    // GREEN = Moving / Active Tracking
+    // BLUE = Idle / Stopped with Tracking Ready
+    // NEUTRAL = Tracking Off
+    val statusColor = when (motionStatus) {
+        MotionStatus.MOVING -> cs.primary
+        MotionStatus.STOPPED -> cs.secondary
+        MotionStatus.SEARCHING_GPS -> cs.secondary
+        MotionStatus.TRACKING_OFF -> cs.onSurfaceVariant
+    }
 
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse_transition")
-    val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.35f,
-        targetValue = 1.0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(800, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulse_alpha"
-    )
-
-    val statusColor by animateColorAsState(
-        targetValue = when (motionStatus) {
-            MotionStatus.MOVING -> NeonGreen
-            MotionStatus.STOPPED -> AmberWarning
-            MotionStatus.SEARCHING_GPS -> CyberCyan
-            MotionStatus.TRACKING_OFF -> TextMutedSlate
-        },
-        label = "status_color"
-    )
-
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xFF0E1520),
-                        PanelDarkGray,
-                        CarbonBlack
-                    )
-                )
-            )
-            .border(
-                width = 1.5.dp,
-                brush = Brush.linearGradient(
-                    colors = listOf(
-                        statusColor.copy(alpha = 0.65f),
-                        PanelBorderGray,
-                        CyberCyan.copy(alpha = 0.35f)
-                    )
-                ),
-                shape = RoundedCornerShape(24.dp)
-            )
-            .padding(horizontal = 16.dp, vertical = 18.dp)
-            .testTag("speedometer_cluster_card")
+    MotoCard(
+        modifier = modifier.testTag("speedometer_gauge_card"),
+        contentPadding = PaddingValues(20.dp)
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.fillMaxWidth()
+        // Top Row: Live Telemetry Status + GPS Signal Status
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // Top bar inside gauge: GPS Indicator + Simulation/Live tag
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                GpsSignalBadge(
-                    signalQuality = gpsSignalQuality,
-                    accuracyMeters = gpsAccuracyMeters
-                )
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .background(PanelElevatedGray)
-                        .padding(horizontal = 10.dp, vertical = 4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.TwoWheeler,
-                        contentDescription = "Ikon Motor",
-                        tint = if (motionStatus == MotionStatus.MOVING) NeonGreen else TextSecondarySilver,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = if (isSimulationActive) "MODE UJI SIMULASI" else "LIVE TELEMETRY",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isSimulationActive) CyberCyan else TextSecondarySilver
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Main Arc Gauge + Big Speed Number
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .size(235.dp)
-            ) {
-                Canvas(modifier = Modifier.fillMaxSize()) {
-                    val strokeWidth = 14.dp.toPx()
-                    val padding = strokeWidth + 10.dp.toPx()
-                    val arcSize = Size(size.width - padding * 2, size.height - padding * 2)
-                    val topLeft = Offset(padding, padding)
-                    val startAngle = 135f
-                    val totalSweep = 270f
-
-                    // Subtle outer glow ring
-                    drawArc(
-                        color = statusColor.copy(alpha = 0.10f),
-                        startAngle = startAngle,
-                        sweepAngle = totalSweep,
-                        useCenter = false,
-                        topLeft = Offset(padding - 6.dp.toPx(), padding - 6.dp.toPx()),
-                        size = Size(arcSize.width + 12.dp.toPx(), arcSize.height + 12.dp.toPx()),
-                        style = Stroke(width = 24.dp.toPx(), cap = StrokeCap.Round)
-                    )
-
-                    // Background track arc
-                    drawArc(
-                        color = PanelElevatedGray,
-                        startAngle = startAngle,
-                        sweepAngle = totalSweep,
-                        useCenter = false,
-                        topLeft = topLeft,
-                        size = arcSize,
-                        style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
-                    )
-
-                    // Segmented tick marks around the speedometer
-                    val center = Offset(size.width / 2f, size.height / 2f)
-                    val outerRadius = (size.width / 2f) - 4.dp.toPx()
-                    val innerRadiusMajor = outerRadius - 10.dp.toPx()
-                    val innerRadiusMinor = outerRadius - 5.dp.toPx()
-                    val totalTicks = 27
-                    for (i in 0..totalTicks) {
-                        val tickFraction = i.toFloat() / totalTicks
-                        val angleDeg = startAngle + (tickFraction * totalSweep)
-                        val angleRad = Math.toRadians(angleDeg.toDouble())
-                        val isMajor = i % 3 == 0
-                        val rStart = if (isMajor) innerRadiusMajor else innerRadiusMinor
-                        val startPt = Offset(
-                            x = center.x + (rStart * cos(angleRad)).toFloat(),
-                            y = center.y + (rStart * sin(angleRad)).toFloat()
-                        )
-                        val endPt = Offset(
-                            x = center.x + (outerRadius * cos(angleRad)).toFloat(),
-                            y = center.y + (outerRadius * sin(angleRad)).toFloat()
-                        )
-                        val tickColor = if (tickFraction <= progress && progress > 0.01f) {
-                            if (tickFraction > 0.78f) AmberWarning else NeonGreen
-                        } else {
-                            PanelBorderGray
-                        }
-                        drawLine(
-                            color = tickColor,
-                            start = startPt,
-                            end = endPt,
-                            strokeWidth = if (isMajor) 2.5.dp.toPx() else 1.2.dp.toPx(),
-                            cap = StrokeCap.Round
-                        )
-                    }
-
-                    // Active Speed Sweep Arc
-                    if (progress > 0.005f) {
-                        drawArc(
-                            brush = Brush.sweepGradient(
-                                colors = listOf(
-                                    NeonGreen,
-                                    CyberCyan,
-                                    NeonGreen,
-                                    AmberWarning
-                                )
-                            ),
-                            startAngle = startAngle,
-                            sweepAngle = totalSweep * progress,
-                            useCenter = false,
-                            topLeft = topLeft,
-                            size = arcSize,
-                            style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
-                        )
-                    }
-                }
-
-                // Digital Speed Readout in Center
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = TelemetryFormatter.formatSpeedInt(animatedSpeed, 1.0f),
-                        fontFamily = OrbitronFontFamily,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 68.sp,
-                        color = if (motionStatus == MotionStatus.MOVING) NeonGreen else TextPrimaryWhite,
-                        modifier = Modifier.testTag("live_speed_value")
-                    )
-                    Text(
-                        text = speedUnit.symbol,
-                        fontFamily = JetBrainsMonoFontFamily,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
-                        letterSpacing = 2.sp,
-                        color = CyberCyan
-                    )
-                }
-            }
-
-            // Motion Status Pill (● MOTOR BERJALAN / ● MOTOR BERHENTI)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
                 modifier = Modifier
-                    .clip(RoundedCornerShape(50))
-                    .background(statusColor.copy(alpha = 0.14f))
-                    .border(1.dp, statusColor.copy(alpha = 0.55f), RoundedCornerShape(50))
-                    .padding(horizontal = 18.dp, vertical = 8.dp)
-                    .testTag("motion_status_badge")
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(statusColor.copy(alpha = 0.10f))
+                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                    .testTag("motion_status_pill")
             ) {
                 Box(
                     modifier = Modifier
-                        .size(10.dp)
+                        .size(7.dp)
                         .clip(CircleShape)
-                        .background(
-                            statusColor.copy(
-                                alpha = if (motionStatus == MotionStatus.MOVING) pulseAlpha else 1f
-                            )
-                        )
+                        .background(statusColor)
                 )
-                Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = motionStatus.labelId,
-                    fontFamily = OrbitronFontFamily,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                    letterSpacing = 1.2.sp,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
                     color = statusColor
                 )
+            }
+
+            GpsSignalBadge(
+                quality = gpsSignalQuality,
+                accuracyMeters = gpsAccuracyMeters
+            )
+        }
+
+        Spacer(modifier = Modifier.height(22.dp))
+
+        // Main Speed Readout (Tabular Numerals)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    text = TelemetryFormatter.formatSpeedInt(speedKmh, speedUnit.multiplier),
+                    style = TextStyle(
+                        fontFamily = InterFontFamily,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 56.sp,
+                        lineHeight = 58.sp,
+                        letterSpacing = (-1.5).sp,
+                        fontFeatureSettings = "tnum"
+                    ),
+                    color = cs.onSurface,
+                    modifier = Modifier.testTag("live_speed_value")
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = if (speedUnit == SpeedUnit.KMH) "KM/H" else "MPH",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = cs.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+            }
+
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = "KECEPATAN LIVE",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = cs.onSurfaceVariant
+                )
+                Text(
+                    text = if (isMoving) "Sensor GPS Aktif" else "Siaga (0 ${speedUnit.symbol})",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (isMoving) cs.primary else cs.onSurfaceVariant
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        // Minimalist Automotive Speed Bar Visualization
+        val trackColor = cs.surfaceVariant
+        val barColor = if (isMoving) cs.primary else cs.secondary
+
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+            ) {
+                val radius = CornerRadius(4.dp.toPx(), 4.dp.toPx())
+                drawRoundRect(
+                    color = trackColor,
+                    topLeft = Offset.Zero,
+                    size = size,
+                    cornerRadius = radius
+                )
+                if (animatedProgress > 0.005f) {
+                    drawRoundRect(
+                        color = barColor,
+                        topLeft = Offset.Zero,
+                        size = Size(size.width * animatedProgress, size.height),
+                        cornerRadius = radius
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                val scaleLabels = if (speedUnit == SpeedUnit.KMH) {
+                    listOf("0", "30", "60", "90", "120+")
+                } else {
+                    listOf("0", "20", "40", "60", "80+")
+                }
+                scaleLabels.forEach { mark ->
+                    Text(
+                        text = mark,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = cs.onSurfaceVariant
+                    )
+                }
             }
         }
     }
@@ -326,193 +294,373 @@ fun DigitalSpeedometerGauge(
 
 @Composable
 fun GpsSignalBadge(
-    signalQuality: GpsSignalQuality,
-    accuracyMeters: Float
+    quality: GpsSignalQuality,
+    accuracyMeters: Float,
+    modifier: Modifier = Modifier
 ) {
-    val tint = when (signalQuality) {
-        GpsSignalQuality.EXCELLENT, GpsSignalQuality.GOOD -> NeonGreen
-        GpsSignalQuality.SIMULATED -> CyberCyan
-        GpsSignalQuality.FAIR -> AmberWarning
-        GpsSignalQuality.WEAK, GpsSignalQuality.NO_SIGNAL -> CrimsonRed
+    val cs = MaterialTheme.colorScheme
+    // Functional Colors:
+    // GREEN = Active / Good GPS
+    // BLUE = Fair / Searching
+    // RED = No Signal / Error
+    val (tintColor, icon) = when (quality) {
+        GpsSignalQuality.EXCELLENT, GpsSignalQuality.GOOD, GpsSignalQuality.SIMULATED ->
+            cs.primary to Icons.Outlined.GpsFixed
+        GpsSignalQuality.FAIR, GpsSignalQuality.WEAK ->
+            cs.secondary to Icons.Outlined.GpsNotFixed
+        GpsSignalQuality.NO_SIGNAL ->
+            cs.error to Icons.Outlined.GpsOff
     }
-    val icon = when (signalQuality) {
-        GpsSignalQuality.EXCELLENT, GpsSignalQuality.GOOD, GpsSignalQuality.SIMULATED -> Icons.Default.GpsFixed
-        GpsSignalQuality.FAIR, GpsSignalQuality.WEAK -> Icons.Default.GpsNotFixed
-        GpsSignalQuality.NO_SIGNAL -> Icons.Default.GpsOff
+
+    val accText = if (accuracyMeters > 0f && quality != GpsSignalQuality.NO_SIGNAL) {
+        "±${accuracyMeters.toInt()}m"
+    } else {
+        ""
     }
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .clip(RoundedCornerShape(50))
-            .background(PanelElevatedGray)
-            .border(1.dp, tint.copy(alpha = 0.4f), RoundedCornerShape(50))
-            .padding(horizontal = 10.dp, vertical = 4.dp)
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(cs.surfaceVariant)
+            .padding(horizontal = 10.dp, vertical = 5.dp)
             .testTag("gps_signal_badge")
     ) {
         Icon(
             imageVector = icon,
-            contentDescription = "Indikator Sinyal GPS",
-            tint = tint,
-            modifier = Modifier.size(15.dp)
+            contentDescription = "Status Sinyal GPS",
+            tint = tintColor,
+            modifier = Modifier.size(14.dp)
         )
         Spacer(modifier = Modifier.width(6.dp))
-        val accuracySuffix = if (accuracyMeters > 0f) " (±${accuracyMeters.toInt()}m)" else ""
         Text(
-            text = "GPS: ${signalQuality.label}$accuracySuffix",
+            text = if (accText.isNotEmpty()) "GPS ${quality.label} ($accText)" else "GPS ${quality.label}",
             style = MaterialTheme.typography.labelSmall,
-            color = tint
+            color = cs.onSurface
         )
     }
 }
 
+/**
+ * Clean Permanent Odometer Card + Trip Odometer Card following the Card-Based UI System.
+ */
 @Composable
 fun PermanentOdometerDisplayCard(
     totalOdometerKm: Double,
     tripOdometerKm: Double,
     speedUnit: SpeedUnit,
+    onResetTripClick: () -> Unit = {},
+    onCalibrateTotalClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val scaledTotal = (totalOdometerKm * speedUnit.multiplier).coerceAtLeast(0.0)
-    val wholePart = scaledTotal.toLong()
-    val tenthPart = ((scaledTotal - wholePart) * 10.0).toInt().coerceIn(0, 9)
-    val paddedDigits = String.format("%06d", wholePart.coerceAtMost(999999L))
+    val cs = MaterialTheme.colorScheme
+    val unitText = speedUnit.distanceSymbol.uppercase()
 
     Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(PanelDarkGray)
-            .border(1.dp, PanelBorderGray, RoundedCornerShape(20.dp))
-            .padding(16.dp)
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Header for Permanent Total Odometer
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+        // 1. PERMANENT ODOMETER CARD
+        MotoCard(
+            modifier = Modifier.testTag("total_odometer_card"),
+            contentPadding = PaddingValues(18.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Lock,
-                    contentDescription = "Odometer Permanen Terkunci",
-                    tint = NeonGreen,
-                    modifier = Modifier.size(15.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "TOTAL ODOMETER PERMANEN",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = NeonGreen
-                )
-            }
-            Text(
-                text = speedUnit.distanceSymbol,
-                style = MaterialTheme.typography.labelLarge,
-                color = TextSecondarySilver
-            )
-        }
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // Segmented Digital Drum Odometer Row
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("total_odometer_display"),
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            paddedDigits.forEach { digitChar ->
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(48.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(CarbonBlack)
-                        .border(1.dp, PanelBorderGray, RoundedCornerShape(8.dp))
-                ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Outlined.Lock,
+                        contentDescription = "Odometer Permanen",
+                        tint = cs.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = digitChar.toString(),
-                        fontFamily = OrbitronFontFamily,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 23.sp,
-                        color = TextPrimaryWhite
+                        text = "Total Odometer Permanen",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = cs.onSurface
+                    )
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .clickable { onCalibrateTotalClick() }
+                        .padding(horizontal = 6.dp, vertical = 4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Edit,
+                        contentDescription = "Sesuaikan Odometer",
+                        tint = cs.onSurfaceVariant,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Sesuaikan",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = cs.onSurfaceVariant
                     )
                 }
             }
 
-            Text(
-                text = ",",
-                fontFamily = OrbitronFontFamily,
-                fontWeight = FontWeight.Bold,
-                fontSize = 26.sp,
-                color = NeonGreen
-            )
+            Spacer(modifier = Modifier.height(10.dp))
 
-            // Decimal 1/10th KM Drum (Highlighted in Neon Green)
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(48.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(NeonGreen.copy(alpha = 0.15f))
-                    .border(1.5.dp, NeonGreen, RoundedCornerShape(8.dp))
+            Row(
+                verticalAlignment = Alignment.Bottom
             ) {
                 Text(
-                    text = tenthPart.toString(),
-                    fontFamily = OrbitronFontFamily,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 23.sp,
-                    color = NeonGreen
+                    text = TelemetryFormatter.formatOdometer(totalOdometerKm, speedUnit.multiplier),
+                    style = MaterialTheme.typography.displayLarge,
+                    color = cs.onSurface
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = unitText,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = cs.primary,
+                    modifier = Modifier.padding(bottom = 6.dp)
                 )
             }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                text = "Tersimpan permanen di perangkat • Tidak terhapus saat riwayat atau trip di-reset",
+                style = MaterialTheme.typography.bodyMedium,
+                fontSize = 12.sp,
+                color = cs.onSurfaceVariant
+            )
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
-
-        // Secondary Row: TRIP ODOMETER
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(PanelElevatedGray)
-                .border(1.dp, CyberCyan.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
-                .padding(horizontal = 14.dp, vertical = 10.dp)
-                .testTag("trip_odometer_display"),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+        // 2. TRIP ODOMETER CARD
+        MotoCard(
+            modifier = Modifier.testTag("trip_odometer_display"),
+            contentPadding = PaddingValues(18.dp)
         ) {
-            Column {
-                Text(
-                    text = "TRIP ODOMETER",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = CyberCyan
-                )
-                Text(
-                    text = "Dapat di-reset manual kapan saja",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontSize = 11.sp,
-                    color = TextSecondarySilver
-                )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Trip Odometer",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = cs.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Jarak perjalanan sesi ini • Dapat di-reset kapan saja",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontSize = 12.sp,
+                        color = cs.onSurfaceVariant
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = onResetTripClick,
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, cs.outline),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    modifier = Modifier
+                        .height(36.dp)
+                        .testTag("btn_reset_trip")
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.RestartAlt,
+                        contentDescription = "Reset Trip",
+                        tint = cs.secondary,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Spacer(modifier = Modifier.width(5.dp))
+                    Text(
+                        text = "Reset Trip",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = cs.secondary
+                    )
+                }
             }
+
+            Spacer(modifier = Modifier.height(10.dp))
 
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(
                     text = TelemetryFormatter.formatOdometerHighPrecision(tripOdometerKm, speedUnit.multiplier),
-                    fontFamily = OrbitronFontFamily,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 24.sp,
-                    color = CyberCyan
+                    style = MaterialTheme.typography.displayMedium,
+                    color = cs.secondary
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = speedUnit.distanceSymbol,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = TextSecondarySilver,
-                    modifier = Modifier.padding(bottom = 3.dp)
+                    text = unitText,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = cs.secondary,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 2x2 Square Circular Ring Widget Preview (1 - 999.999 Odometer ring progression).
+ */
+@Composable
+fun SquareCircularOdometerWidgetPreview(
+    bikeName: String,
+    totalOdometerKm: Double,
+    tripOdometerKm: Double,
+    speedUnit: SpeedUnit,
+    widgetTheme: WidgetThemeStyle,
+    isMoving: Boolean,
+    sizeDp: Dp = 184.dp,
+    modifier: Modifier = Modifier
+) {
+    val odoStr = TelemetryFormatter.formatOdometer(totalOdometerKm, speedUnit.multiplier)
+    val tripStr = "Trip ${TelemetryFormatter.formatOdometerHighPrecision(tripOdometerKm, speedUnit.multiplier)} ${speedUnit.distanceSymbol}"
+    val ringColor = Color(widgetTheme.ringColorHex)
+
+    val targetOdoProgress = TelemetryFormatter.calculateOdometerRingProgress(
+        km = totalOdometerKm,
+        multiplier = speedUnit.multiplier
+    )
+    val animatedOdoProgress by animateFloatAsState(
+        targetValue = targetOdoProgress,
+        animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing),
+        label = "widget_odo_ring_progress"
+    )
+
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .size(sizeDp)
+            .shadow(elevation = 6.dp, shape = RoundedCornerShape(32.dp))
+            .clip(RoundedCornerShape(32.dp))
+            .background(
+                Brush.linearGradient(
+                    colors = listOf(
+                        Color(widgetTheme.startColorHex),
+                        Color(widgetTheme.endColorHex)
+                    )
+                )
+            )
+            .padding(14.dp)
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val strokePx = 9.dp.toPx()
+            val inset = strokePx / 2f + 4.dp.toPx()
+            val arcDiameter = size.minDimension - inset * 2f
+            val topLeft = Offset(inset, inset)
+            val arcSize = Size(arcDiameter, arcDiameter)
+
+            drawArc(
+                color = Color.White.copy(alpha = 0.22f),
+                startAngle = 0f,
+                sweepAngle = 360f,
+                useCenter = false,
+                topLeft = topLeft,
+                size = arcSize,
+                style = Stroke(width = strokePx, cap = StrokeCap.Round)
+            )
+
+            if (animatedOdoProgress > 0.001f) {
+                drawArc(
+                    color = ringColor,
+                    startAngle = -90f,
+                    sweepAngle = 360f * animatedOdoProgress,
+                    useCenter = false,
+                    topLeft = topLeft,
+                    size = arcSize,
+                    style = Stroke(width = strokePx, cap = StrokeCap.Round)
+                )
+            } else {
+                val topCenter = Offset(size.width / 2f, inset)
+                drawCircle(
+                    color = ringColor.copy(alpha = 0.7f),
+                    radius = strokePx / 2f,
+                    center = topCenter
+                )
+            }
+        }
+
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 14.dp, vertical = 12.dp)
+        ) {
+            Text(
+                text = bikeName,
+                style = MaterialTheme.typography.labelMedium,
+                color = Color.White.copy(alpha = 0.92f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            Spacer(modifier = Modifier.height(2.dp))
+
+            Text(
+                text = odoStr,
+                style = TextStyle(
+                    fontFamily = InterFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = when {
+                        odoStr.length >= 9 -> 20.sp
+                        odoStr.length >= 7 -> 24.sp
+                        else -> 27.sp
+                    },
+                    fontFeatureSettings = "tnum"
+                ),
+                color = Color.White,
+                maxLines = 1
+            )
+
+            Text(
+                text = "ODO / 999.999 ${speedUnit.distanceSymbol.uppercase()}",
+                style = MaterialTheme.typography.labelSmall,
+                fontSize = 8.sp,
+                color = Color.White.copy(alpha = 0.8f)
+            )
+
+            Spacer(modifier = Modifier.height(5.dp))
+
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.White.copy(alpha = 0.18f))
+                    .padding(horizontal = 9.dp, vertical = 2.dp)
+            ) {
+                Text(
+                    text = tripStr,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontSize = 9.5.sp,
+                    color = Color.White,
+                    maxLines = 1
+                )
+            }
+
+            Spacer(modifier = Modifier.height(5.dp))
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(if (isMoving) Color(0xFF20B978) else Color.White.copy(alpha = 0.7f))
+                )
+                Spacer(modifier = Modifier.width(5.dp))
+                Icon(
+                    imageVector = Icons.Outlined.TwoWheeler,
+                    contentDescription = "Motor",
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
                 )
             }
         }

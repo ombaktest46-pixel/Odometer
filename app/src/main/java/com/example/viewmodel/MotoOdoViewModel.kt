@@ -14,6 +14,8 @@ import com.example.model.PowerMode
 import com.example.model.SensitivityLevel
 import com.example.model.SettingsState
 import com.example.model.SpeedUnit
+import com.example.model.ThemeMode
+import com.example.model.WidgetThemeStyle
 import com.example.service.AutoTrackingService
 import com.example.service.TelemetryStateHolder
 import kotlinx.coroutines.Dispatchers
@@ -100,7 +102,7 @@ class MotoOdoViewModel(
         viewModelScope.launch {
             odometerPreferences.setAutoTrackingEnabled(true)
             AutoTrackingService.startService(context, AutoTrackingService.ACTION_START_AUTO_TRACKING)
-            showMessage("Auto Tracking AKTIF • Memantau pergerakan GPS motor otomatis")
+            showMessage("Auto Tracking aktif • Memantau pergerakan GPS motor otomatis")
         }
     }
 
@@ -109,20 +111,66 @@ class MotoOdoViewModel(
             odometerPreferences.setAutoTrackingEnabled(false)
             AutoTrackingService.stopService(context)
             TelemetryStateHolder.onTrackingStopped()
-            showMessage("Auto Tracking DIMATIKAN • Sesi perjalanan disimpan")
+            com.example.widget.MotoOdoWidgetProvider.updateAllWidgets(context)
+            showMessage("Auto Tracking dimatikan • Sesi perjalanan disimpan")
         }
     }
 
     fun resetTripOdometer(context: Context) {
         viewModelScope.launch {
-            // Save any active in-memory ride to history before resetting Trip Odometer
             if (telemetryState.value.activeRideDistanceKm >= 0.01) {
                 AutoTrackingService.startService(context, AutoTrackingService.ACTION_SAVE_CURRENT_RIDE_NOW)
             }
             odometerPreferences.resetTripOdometer()
             TelemetryStateHolder.onTripReset()
-            showMessage("Trip Odometer di-reset ke 0,0 KM (Total Odometer tetap permanen)")
+            com.example.widget.MotoOdoWidgetProvider.updateAllWidgets(context)
+            showMessage("Trip Odometer di-reset ke 0,0 km (Total Odometer tetap permanen)")
         }
+    }
+
+    fun requestPinHomeWidget(context: Context) {
+        com.example.widget.MotoOdoWidgetProvider.updateAllWidgets(context)
+        val pinned = com.example.widget.MotoOdoWidgetProvider.requestPinWidget(context)
+        if (pinned) {
+            showMessage("Konfirmasi pemasangan Widget 2x2 ke Layar Utama...")
+        } else {
+            showMessage("Tekan lama Layar Utama HP -> Pilih Widgets -> Cari 'MOTO ODO'")
+        }
+    }
+
+    fun setBikeName(context: Context, name: String) {
+        viewModelScope.launch {
+            val cleaned = name.trim().ifEmpty { "Motor Saya" }
+            odometerPreferences.setBikeName(cleaned)
+            com.example.widget.MotoOdoWidgetProvider.updateAllWidgets(context)
+            showMessage("Nama motor diperbarui ke: $cleaned")
+        }
+    }
+
+    fun setWidgetTheme(context: Context, theme: WidgetThemeStyle) {
+        viewModelScope.launch {
+            odometerPreferences.setWidgetTheme(theme)
+            com.example.widget.MotoOdoWidgetProvider.updateAllWidgets(context)
+            showMessage("Tema widget diatur ke: ${theme.label}")
+        }
+    }
+
+    fun setThemeMode(mode: ThemeMode) {
+        viewModelScope.launch {
+            odometerPreferences.setThemeMode(mode)
+            showMessage("Tema tampilan diatur ke: ${mode.label}")
+        }
+    }
+
+    fun toggleDarkLightMode(isSystemDark: Boolean) {
+        val current = settingsState.value.themeMode
+        val currentlyDark = when (current) {
+            ThemeMode.DARK -> true
+            ThemeMode.LIGHT -> false
+            ThemeMode.SYSTEM -> isSystemDark
+        }
+        val next = if (currentlyDark) ThemeMode.LIGHT else ThemeMode.DARK
+        setThemeMode(next)
     }
 
     fun deleteSingleTrip(tripId: Long) {
@@ -174,10 +222,14 @@ class MotoOdoViewModel(
         }
     }
 
-    fun setProtectedTotalOdometer(newTotalKm: Double) {
+    fun setProtectedTotalOdometer(newTotalKm: Double, context: Context? = null) {
         viewModelScope.launch {
-            odometerPreferences.setCalibratedTotalOdometer(newTotalKm)
-            showMessage("Total Odometer permanen disesuaikan ke ${String.format("%.1f", newTotalKm)} KM")
+            val clamped = newTotalKm.coerceIn(0.0, 999_999.0)
+            odometerPreferences.setCalibratedTotalOdometer(clamped)
+            if (context != null) {
+                com.example.widget.MotoOdoWidgetProvider.updateAllWidgets(context)
+            }
+            showMessage("Total Odometer disesuaikan ke ${String.format("%.1f", clamped)} km")
         }
     }
 

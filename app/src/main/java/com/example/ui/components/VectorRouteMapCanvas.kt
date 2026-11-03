@@ -25,12 +25,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CenterFocusStrong
-import androidx.compose.material.icons.filled.Explore
-import androidx.compose.material.icons.filled.Layers
-import androidx.compose.material.icons.filled.Map
-import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.CenterFocusStrong
+import androidx.compose.material.icons.outlined.Explore
+import androidx.compose.material.icons.outlined.Layers
+import androidx.compose.material.icons.outlined.Map
+import androidx.compose.material.icons.outlined.Remove
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -51,26 +52,19 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.model.RoutePoint
-import com.example.ui.theme.AmberWarning
-import com.example.ui.theme.CarbonBlack
-import com.example.ui.theme.CrimsonRed
-import com.example.ui.theme.CyberCyan
-import com.example.ui.theme.NeonGreen
-import com.example.ui.theme.PanelBorderGray
-import com.example.ui.theme.PanelElevatedGray
-import com.example.ui.theme.TextPrimaryWhite
-import com.example.ui.theme.TextSecondarySilver
 import kotlin.math.max
 
 enum class RouteMapMode(val label: String) {
     STREET_MAP("Peta Jalan"),
-    VECTOR_RADAR("Vektor Offline")
+    VECTOR_RADAR("Vektor")
 }
 
 enum class StreetTileStyle(val label: String, val tileUrl: String) {
@@ -79,235 +73,233 @@ enum class StreetTileStyle(val label: String, val tileUrl: String) {
         "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
     ),
     STREET(
-        "Terang (OSM)",
+        "Terang",
         "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
     )
 }
 
-/**
- * Dual-Mode Route Map for MOTO ODO Trip History:
- * 1. Peta Jalan Interaktif (OpenStreetMap / CartoDB Dark & Street Map with real roads, markers & speed-coded polyline)
- * 2. Vektor Offline (Canvas telemetry radar that works 100% offline without internet)
- */
 @Composable
 fun VectorRouteMapCanvas(
     routePoints: List<RoutePoint>,
     startLabel: String,
     endLabel: String,
     modifier: Modifier = Modifier,
-    mapHeight: Dp = 280.dp
+    mapHeight: Dp = 260.dp
 ) {
+    val cs = MaterialTheme.colorScheme
+    val isLightTheme = cs.background.luminance() > 0.5f
+
     var mapMode by remember { mutableStateOf(RouteMapMode.STREET_MAP) }
-    var tileStyle by remember { mutableStateOf(StreetTileStyle.DARK) }
+    var tileStyle by remember(isLightTheme) {
+        mutableStateOf(if (isLightTheme) StreetTileStyle.STREET else StreetTileStyle.DARK)
+    }
     var zoom by remember { mutableFloatStateOf(1f) }
     var panOffset by remember { mutableStateOf(Offset.Zero) }
 
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .background(CarbonBlack)
-            .border(1.dp, PanelBorderGray, RoundedCornerShape(18.dp))
-    ) {
-        // Top Map Header + Mode Switcher
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(PanelElevatedGray)
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = if (mapMode == RouteMapMode.STREET_MAP) Icons.Default.Map else Icons.Default.Explore,
-                    contentDescription = "Mode Peta Rute",
-                    tint = NeonGreen,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "PETA RUTE (${routePoints.size} Titik GPS)",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = NeonGreen
-                )
-            }
-
-            // Mode Toggle Chips (Peta Jalan vs Vektor Offline + Tema Peta)
+    MotoCard(modifier = modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // Top Map Header + Mode Switcher
             Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(cs.surfaceVariant.copy(alpha = 0.5f))
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = if (mapMode == RouteMapMode.STREET_MAP) Icons.Outlined.Map else Icons.Outlined.Explore,
+                        contentDescription = "Mode Peta Rute",
+                        tint = cs.secondary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Peta Rute (${routePoints.size} Titik)",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = cs.onSurface
+                    )
+                }
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (mapMode == RouteMapMode.STREET_MAP) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(cs.surface)
+                                .border(1.dp, cs.outline, RoundedCornerShape(8.dp))
+                                .clickable {
+                                    tileStyle = if (tileStyle == StreetTileStyle.DARK) {
+                                        StreetTileStyle.STREET
+                                    } else {
+                                        StreetTileStyle.DARK
+                                    }
+                                }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                .testTag("btn_toggle_map_theme")
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Layers,
+                                    contentDescription = "Ganti Tema Peta",
+                                    tint = cs.secondary,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = tileStyle.label,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = cs.secondary
+                                )
+                            }
+                        }
+                    }
+
+                    RouteMapMode.entries.forEach { mode ->
+                        val selected = mapMode == mode
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (selected) cs.secondary.copy(alpha = 0.12f) else cs.surface)
+                                .border(
+                                    1.dp,
+                                    if (selected) cs.secondary.copy(alpha = 0.45f) else cs.outline,
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .clickable { mapMode = mode }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                .testTag("btn_map_mode_${mode.name}")
+                        ) {
+                            Text(
+                                text = mode.label,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                                color = if (selected) cs.secondary else cs.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+
+            HorizontalDivider(thickness = 1.dp, color = cs.outline)
+
+            // Main Map Content Area
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(mapHeight)
+                    .testTag("vector_route_map_canvas")
+            ) {
                 if (mapMode == RouteMapMode.STREET_MAP) {
+                    InteractiveLeafletStreetMap(
+                        routePoints = routePoints,
+                        startLabel = startLabel,
+                        endLabel = endLabel,
+                        tileStyle = tileStyle,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(CarbonBlack)
-                            .border(1.dp, CyberCyan.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                            .clickable {
-                                tileStyle = if (tileStyle == StreetTileStyle.DARK) {
-                                    StreetTileStyle.STREET
-                                } else {
-                                    StreetTileStyle.DARK
+                            .fillMaxSize()
+                            .background(cs.surface)
+                            .pointerInput(Unit) {
+                                detectTransformGestures { _, pan, gestureZoom, _ ->
+                                    zoom = (zoom * gestureZoom).coerceIn(0.7f, 6f)
+                                    panOffset += pan
                                 }
                             }
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                            .testTag("btn_toggle_map_theme")
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Layers,
-                                contentDescription = "Ganti Tema Peta",
-                                tint = CyberCyan,
-                                modifier = Modifier.size(13.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = tileStyle.label,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = CyberCyan
-                            )
-                        }
-                    }
-                }
-
-                RouteMapMode.entries.forEach { mode ->
-                    val selected = mapMode == mode
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (selected) NeonGreen.copy(alpha = 0.18f) else CarbonBlack)
-                            .border(
-                                1.dp,
-                                if (selected) NeonGreen else PanelBorderGray,
-                                RoundedCornerShape(8.dp)
-                            )
-                            .clickable { mapMode = mode }
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                            .testTag("btn_map_mode_${mode.name}")
-                    ) {
-                        Text(
-                            text = mode.label,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (selected) NeonGreen else TextSecondarySilver
+                        VectorRadarCanvasBody(
+                            routePoints = routePoints,
+                            zoom = zoom,
+                            panOffset = panOffset
                         )
-                    }
-                }
-            }
-        }
 
-        // Main Map Content Area
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(mapHeight)
-                .testTag("vector_route_map_canvas")
-        ) {
-            if (mapMode == RouteMapMode.STREET_MAP) {
-                InteractiveLeafletStreetMap(
-                    routePoints = routePoints,
-                    startLabel = startLabel,
-                    endLabel = endLabel,
-                    tileStyle = tileStyle,
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else {
-                // Offline Vector Telemetry Canvas
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .pointerInput(Unit) {
-                            detectTransformGestures { _, pan, gestureZoom, _ ->
-                                zoom = (zoom * gestureZoom).coerceIn(0.7f, 6f)
-                                panOffset += pan
+                        Row(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(8.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(cs.surface.copy(alpha = 0.94f))
+                                .border(1.dp, cs.outline, RoundedCornerShape(10.dp)),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(
+                                onClick = { zoom = (zoom * 1.3f).coerceIn(0.7f, 6f) },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Add,
+                                    contentDescription = "Perbesar Peta",
+                                    tint = cs.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            IconButton(
+                                onClick = { zoom = (zoom / 1.3f).coerceIn(0.7f, 6f) },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Remove,
+                                    contentDescription = "Perkecil Peta",
+                                    tint = cs.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            IconButton(
+                                onClick = {
+                                    zoom = 1f
+                                    panOffset = Offset.Zero
+                                },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.CenterFocusStrong,
+                                    contentDescription = "Reset Posisi Peta",
+                                    tint = cs.secondary,
+                                    modifier = Modifier.size(16.dp)
+                                )
                             }
                         }
-                ) {
-                    VectorRadarCanvasBody(
-                        routePoints = routePoints,
-                        zoom = zoom,
-                        panOffset = panOffset
-                    )
-
-                    // Zoom controls overlay for Vector mode
-                    Row(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(8.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(PanelElevatedGray.copy(alpha = 0.9f))
-                            .border(1.dp, PanelBorderGray, RoundedCornerShape(10.dp)),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(
-                            onClick = { zoom = (zoom * 1.3f).coerceIn(0.7f, 6f) },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = "Perbesar Peta",
-                                tint = NeonGreen,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                        IconButton(
-                            onClick = { zoom = (zoom / 1.3f).coerceIn(0.7f, 6f) },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Remove,
-                                contentDescription = "Perkecil Peta",
-                                tint = TextSecondarySilver,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                        IconButton(
-                            onClick = {
-                                zoom = 1f
-                                panOffset = Offset.Zero
-                            },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.CenterFocusStrong,
-                                contentDescription = "Reset Posisi Peta",
-                                tint = CyberCyan,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
                     }
                 }
             }
-        }
 
-        // Map Legend & Start/Finish Coordinates
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(PanelElevatedGray)
-                .padding(horizontal = 14.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            LegendDot(color = NeonGreen, text = "Awal: $startLabel")
-            LegendDot(color = CrimsonRed, text = "Akhir: $endLabel")
+            HorizontalDivider(thickness = 1.dp, color = cs.outline)
+
+            // Map Legend & Start/Finish Coordinates
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(cs.surfaceVariant.copy(alpha = 0.5f))
+                    .padding(horizontal = 14.dp, vertical = 9.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                LegendDot(color = cs.primary, text = "Awal: $startLabel")
+                LegendDot(color = cs.error, text = "Akhir: $endLabel")
+            }
         }
     }
 }
 
-/**
- * Mini Vector Route Thumbnail for Trip History Cards so users can see the route shape at a glance.
- */
 @Composable
 fun MiniRoutePreviewCanvas(
     routePoints: List<RoutePoint>,
     modifier: Modifier = Modifier
 ) {
+    val cs = MaterialTheme.colorScheme
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(CarbonBlack)
-            .border(1.dp, PanelBorderGray, RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(10.dp))
+            .background(cs.surfaceVariant)
+            .border(1.dp, cs.outline, RoundedCornerShape(10.dp))
     ) {
         VectorRadarCanvasBody(
             routePoints = routePoints,
@@ -325,16 +317,22 @@ private fun VectorRadarCanvasBody(
     panOffset: Offset,
     isCompactPreview: Boolean = false
 ) {
+    val cs = MaterialTheme.colorScheme
+    val gridColor = cs.outline.copy(alpha = 0.5f)
+    val primaryColor = cs.primary
+    val secondaryColor = cs.secondary
+    val errorColor = cs.error
+
     Canvas(modifier = Modifier.fillMaxSize()) {
         val w = size.width
         val h = size.height
 
         val gridSpacing = if (isCompactPreview) 18.dp.toPx() else 32.dp.toPx()
-        val dashEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f)
+        val dashEffect = PathEffect.dashPathEffect(floatArrayOf(5f, 5f), 0f)
         var gx = 0f
         while (gx <= w) {
             drawLine(
-                color = PanelBorderGray.copy(alpha = 0.35f),
+                color = gridColor,
                 start = Offset(gx, 0f),
                 end = Offset(gx, h),
                 strokeWidth = 1f,
@@ -345,7 +343,7 @@ private fun VectorRadarCanvasBody(
         var gy = 0f
         while (gy <= h) {
             drawLine(
-                color = PanelBorderGray.copy(alpha = 0.35f),
+                color = gridColor,
                 start = Offset(0f, gy),
                 end = Offset(w, gy),
                 strokeWidth = 1f,
@@ -364,7 +362,7 @@ private fun VectorRadarCanvasBody(
         val latSpan = max(maxLat - minLat, 0.00025)
         val lngSpan = max(maxLng - minLng, 0.00025)
 
-        val paddingPx = if (isCompactPreview) 12.dp.toPx() else 36.dp.toPx()
+        val paddingPx = if (isCompactPreview) 10.dp.toPx() else 34.dp.toPx()
         val usableW = (w - paddingPx * 2).coerceAtLeast(10f)
         val usableH = (h - paddingPx * 2).coerceAtLeast(10f)
 
@@ -392,9 +390,9 @@ private fun VectorRadarCanvasBody(
             }
             drawPath(
                 path = fullPath,
-                color = NeonGreen.copy(alpha = 0.20f),
+                color = secondaryColor.copy(alpha = 0.16f),
                 style = Stroke(
-                    width = if (isCompactPreview) 6.dp.toPx() else 12.dp.toPx(),
+                    width = if (isCompactPreview) 4.5.dp.toPx() else 9.dp.toPx(),
                     cap = StrokeCap.Round,
                     join = StrokeJoin.Round
                 )
@@ -405,41 +403,40 @@ private fun VectorRadarCanvasBody(
                 val p2 = projected[i + 1]
                 val spd = routePoints[i + 1].speedKmh
                 val segColor = when {
-                    spd < 35f -> NeonGreen
-                    spd < 65f -> CyberCyan
-                    else -> AmberWarning
+                    spd < 45f -> primaryColor
+                    else -> secondaryColor
                 }
                 drawLine(
                     color = segColor,
                     start = p1,
                     end = p2,
-                    strokeWidth = if (isCompactPreview) 2.5.dp.toPx() else 4.dp.toPx(),
+                    strokeWidth = if (isCompactPreview) 2.2.dp.toPx() else 3.8.dp.toPx(),
                     cap = StrokeCap.Round
                 )
             }
         }
 
         val firstPt = projected.first()
-        val pinRadius = if (isCompactPreview) 3.5.dp.toPx() else 6.dp.toPx()
+        val pinRadius = if (isCompactPreview) 3.dp.toPx() else 5.5.dp.toPx()
         drawCircle(
-            color = NeonGreen.copy(alpha = 0.35f),
-            radius = pinRadius * 2f,
+            color = primaryColor.copy(alpha = 0.25f),
+            radius = pinRadius * 1.9f,
             center = firstPt
         )
         drawCircle(
-            color = NeonGreen,
+            color = primaryColor,
             radius = pinRadius,
             center = firstPt
         )
 
         val lastPt = projected.last()
         drawCircle(
-            color = CrimsonRed.copy(alpha = 0.35f),
-            radius = pinRadius * 2f,
+            color = errorColor.copy(alpha = 0.25f),
+            radius = pinRadius * 1.9f,
             center = lastPt
         )
         drawCircle(
-            color = CrimsonRed,
+            color = errorColor,
             radius = pinRadius,
             center = lastPt
         )
@@ -451,9 +448,9 @@ private fun VectorRadarCanvasBody(
             modifier = Modifier.fillMaxSize()
         ) {
             Text(
-                text = if (isCompactPreview) "Belum ada titik GPS" else "Data koordinat rute belum tersedia",
+                text = if (isCompactPreview) "No GPS" else "Data koordinat rute belum tersedia",
                 style = MaterialTheme.typography.labelSmall,
-                color = TextSecondarySilver
+                color = cs.onSurfaceVariant
             )
         }
     }
@@ -473,7 +470,8 @@ private fun InteractiveLeafletStreetMap(
             routePoints = routePoints,
             startLabel = startLabel,
             endLabel = endLabel,
-            tileUrl = tileStyle.tileUrl
+            tileUrl = tileStyle.tileUrl,
+            isLightMap = tileStyle == StreetTileStyle.STREET
         )
     }
 
@@ -481,7 +479,7 @@ private fun InteractiveLeafletStreetMap(
         modifier = modifier,
         factory = { context ->
             WebView(context).apply {
-                setBackgroundColor(android.graphics.Color.parseColor("#07090C"))
+                setBackgroundColor(android.graphics.Color.parseColor("#E7EAF0"))
                 settings.apply {
                     javaScriptEnabled = true
                     domStorageEnabled = true
@@ -492,7 +490,6 @@ private fun InteractiveLeafletStreetMap(
                 }
                 webChromeClient = WebChromeClient()
                 webViewClient = WebViewClient()
-                // Prevent parent LazyColumn from intercepting touch drag while panning/zooming the map
                 setOnTouchListener { v, event ->
                     when (event.action) {
                         MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE ->
@@ -520,7 +517,8 @@ private fun buildLeafletHtml(
     routePoints: List<RoutePoint>,
     startLabel: String,
     endLabel: String,
-    tileUrl: String
+    tileUrl: String,
+    isLightMap: Boolean
 ): String {
     val coordsJsArray = if (routePoints.isNotEmpty()) {
         routePoints.joinToString(prefix = "[", postfix = "]") { pt ->
@@ -532,6 +530,9 @@ private fun buildLeafletHtml(
 
     val defaultCenterLat = routePoints.firstOrNull()?.lat ?: -6.200000
     val defaultCenterLng = routePoints.firstOrNull()?.lng ?: 106.816666
+    val bgHex = if (isLightMap) "#F6F7F9" else "#101216"
+    val lineHex = if (isLightMap) "#16A36A" else "#20B978"
+    val endHex = if (isLightMap) "#E5484D" else "#F16B70"
 
     return """
         <!DOCTYPE html>
@@ -547,32 +548,27 @@ private fun buildLeafletHtml(
                     height: 100%;
                     margin: 0;
                     padding: 0;
-                    background: #07090C;
-                    font-family: sans-serif;
+                    background: $bgHex;
+                    font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif;
                 }
                 .leaflet-control-attribution {
-                    background: rgba(11, 14, 20, 0.75) !important;
-                    color: #9BA9B8 !important;
                     font-size: 9px !important;
-                }
-                .leaflet-control-attribution a {
-                    color: #00E5FF !important;
                 }
                 .pin-start {
                     width: 14px;
                     height: 14px;
-                    background: #00FF66;
-                    border: 2.5px solid #07090C;
+                    background: $lineHex;
+                    border: 2.5px solid #FFFFFF;
                     border-radius: 50%;
-                    box-shadow: 0 0 10px #00FF66;
+                    box-shadow: 0 1px 4px rgba(0,0,0,0.30);
                 }
                 .pin-end {
                     width: 14px;
                     height: 14px;
-                    background: #FF3B5C;
+                    background: $endHex;
                     border: 2.5px solid #FFFFFF;
                     border-radius: 50%;
-                    box-shadow: 0 0 10px #FF3B5C;
+                    box-shadow: 0 1px 4px rgba(0,0,0,0.30);
                 }
             </style>
         </head>
@@ -593,19 +589,17 @@ private fun buildLeafletHtml(
                 if (points.length > 0) {
                     var latlngs = points.map(function(p) { return [p[0], p[1]]; });
 
-                    // Outer neon glow line
                     L.polyline(latlngs, {
-                        color: '#00FF66',
-                        weight: 9,
-                        opacity: 0.25,
+                        color: '$lineHex',
+                        weight: 8,
+                        opacity: 0.20,
                         lineCap: 'round',
                         lineJoin: 'round'
                     }).addTo(map);
 
-                    // Main route line
                     var routeLine = L.polyline(latlngs, {
-                        color: '#00FF66',
-                        weight: 4.5,
+                        color: '$lineHex',
+                        weight: 4,
                         opacity: 0.95,
                         lineCap: 'round',
                         lineJoin: 'round'
@@ -648,10 +642,11 @@ private fun buildLeafletHtml(
 
 @Composable
 private fun LegendDot(color: Color, text: String) {
+    val cs = MaterialTheme.colorScheme
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(
             modifier = Modifier
-                .size(8.dp)
+                .size(7.dp)
                 .clip(CircleShape)
                 .background(color)
         )
@@ -659,7 +654,7 @@ private fun LegendDot(color: Color, text: String) {
         Text(
             text = text,
             style = MaterialTheme.typography.labelSmall,
-            color = TextSecondarySilver
+            color = cs.onSurfaceVariant
         )
     }
 }

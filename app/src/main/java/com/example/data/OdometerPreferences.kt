@@ -14,7 +14,10 @@ import com.example.model.GpsAccuracyFilter
 import com.example.model.PowerMode
 import com.example.model.SensitivityLevel
 import com.example.model.SettingsState
+import com.example.model.SpeedAlertMode
 import com.example.model.SpeedUnit
+import com.example.model.ThemeMode
+import com.example.model.WidgetThemeStyle
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -61,6 +64,14 @@ class OdometerPreferences(private val dataStore: DataStore<Preferences>) {
         val KEY_CALIBRATION_FACTOR = floatPreferencesKey("calibration_factor")
         val KEY_NOTIFICATIONS_ENABLED = booleanPreferencesKey("notifications_enabled")
         val KEY_SIMULATION_CLEANED_V2 = booleanPreferencesKey("simulation_cleaned_v2")
+
+        // Speed Limit Alert Keys
+        val KEY_SPEED_LIMIT_ENABLED = booleanPreferencesKey("speed_limit_enabled")
+        val KEY_SPEED_LIMIT_KMH = floatPreferencesKey("speed_limit_kmh")
+        val KEY_SPEED_ALERT_MODE = stringPreferencesKey("speed_alert_mode")
+        val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
+        val KEY_BIKE_NAME = stringPreferencesKey("bike_name")
+        val KEY_WIDGET_THEME = stringPreferencesKey("widget_theme")
     }
 
     suspend fun cleanUpSimulationResidueOnce() {
@@ -98,6 +109,21 @@ class OdometerPreferences(private val dataStore: DataStore<Preferences>) {
             SpeedUnit.valueOf(prefs[KEY_SPEED_UNIT] ?: SpeedUnit.KMH.name)
         }.getOrDefault(SpeedUnit.KMH)
 
+        val alertMode = runCatching {
+            SpeedAlertMode.valueOf(prefs[KEY_SPEED_ALERT_MODE] ?: SpeedAlertMode.VIBRATE_AND_SOUND.name)
+        }.getOrDefault(SpeedAlertMode.VIBRATE_AND_SOUND)
+
+        val themeMode = runCatching {
+            ThemeMode.valueOf(prefs[KEY_THEME_MODE] ?: ThemeMode.SYSTEM.name)
+        }.getOrDefault(ThemeMode.SYSTEM)
+
+        val widgetTheme = runCatching {
+            WidgetThemeStyle.valueOf(prefs[KEY_WIDGET_THEME] ?: WidgetThemeStyle.LAVENDER.name)
+        }.getOrDefault(WidgetThemeStyle.LAVENDER)
+
+        val rawBikeName = prefs[KEY_BIKE_NAME]?.trim().orEmpty()
+        val bikeName = if (rawBikeName.isNotEmpty()) rawBikeName else "Motor Saya"
+
         PersistedOdometerData(
             totalOdometerKm = prefs[KEY_TOTAL_ODOMETER_KM] ?: 0.0,
             tripOdometerKm = prefs[KEY_TRIP_ODOMETER_KM] ?: 0.0,
@@ -115,16 +141,19 @@ class OdometerPreferences(private val dataStore: DataStore<Preferences>) {
                 powerMode = powerMode,
                 speedUnit = speedUnit,
                 calibrationFactor = (prefs[KEY_CALIBRATION_FACTOR] ?: 1.0f).coerceIn(0.80f, 1.25f),
-                notificationsEnabled = prefs[KEY_NOTIFICATIONS_ENABLED] ?: true
+                notificationsEnabled = prefs[KEY_NOTIFICATIONS_ENABLED] ?: true,
+                isSpeedLimitEnabled = prefs[KEY_SPEED_LIMIT_ENABLED] ?: false,
+                speedLimitKmh = (prefs[KEY_SPEED_LIMIT_KMH] ?: 80f).coerceIn(20f, 180f),
+                speedAlertMode = alertMode,
+                themeMode = themeMode,
+                bikeName = bikeName,
+                widgetTheme = widgetTheme
             )
         )
     }
 
     suspend fun getSnapshot(): PersistedOdometerData = persistedDataFlow.first()
 
-    /**
-     * Atomically increments both the Permanent Total Odometer and the Trip Odometer.
-     */
     suspend fun recordMovementDelta(
         deltaKm: Double,
         deltaDurationSeconds: Long,
@@ -167,9 +196,6 @@ class OdometerPreferences(private val dataStore: DataStore<Preferences>) {
         }
     }
 
-    /**
-     * Resets ONLY the Trip Odometer. Permanent Total Odometer is strictly untouched.
-     */
     suspend fun resetTripOdometer() {
         dataStore.edit { prefs ->
             prefs[KEY_TRIP_ODOMETER_KM] = 0.0
@@ -178,9 +204,6 @@ class OdometerPreferences(private val dataStore: DataStore<Preferences>) {
         }
     }
 
-    /**
-     * Protected adjustment of the Permanent Total Odometer (e.g. matching physical motorcycle odometer).
-     */
     suspend fun setCalibratedTotalOdometer(newTotalKm: Double) {
         val safeTotal = newTotalKm.coerceAtLeast(0.0)
         dataStore.edit { prefs ->
@@ -227,6 +250,43 @@ class OdometerPreferences(private val dataStore: DataStore<Preferences>) {
     suspend fun setNotificationsEnabled(enabled: Boolean) {
         dataStore.edit { prefs ->
             prefs[KEY_NOTIFICATIONS_ENABLED] = enabled
+        }
+    }
+
+    suspend fun setThemeMode(mode: ThemeMode) {
+        dataStore.edit { prefs ->
+            prefs[KEY_THEME_MODE] = mode.name
+        }
+    }
+
+    suspend fun setBikeName(name: String) {
+        val cleaned = name.trim().ifEmpty { "Motor Saya" }
+        dataStore.edit { prefs ->
+            prefs[KEY_BIKE_NAME] = cleaned
+        }
+    }
+
+    suspend fun setWidgetTheme(theme: WidgetThemeStyle) {
+        dataStore.edit { prefs ->
+            prefs[KEY_WIDGET_THEME] = theme.name
+        }
+    }
+
+    suspend fun setSpeedLimitEnabled(enabled: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[KEY_SPEED_LIMIT_ENABLED] = enabled
+        }
+    }
+
+    suspend fun setSpeedLimitKmh(limitKmh: Float) {
+        dataStore.edit { prefs ->
+            prefs[KEY_SPEED_LIMIT_KMH] = limitKmh.coerceIn(20f, 180f)
+        }
+    }
+
+    suspend fun setSpeedAlertMode(mode: SpeedAlertMode) {
+        dataStore.edit { prefs ->
+            prefs[KEY_SPEED_ALERT_MODE] = mode.name
         }
     }
 

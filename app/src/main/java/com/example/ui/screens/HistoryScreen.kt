@@ -22,16 +22,17 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material.icons.filled.DeleteSweep
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Map
-import androidx.compose.material.icons.filled.Route
-import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.DeleteSweep
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Map
+import androidx.compose.material.icons.outlined.Route
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -47,6 +48,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -56,18 +58,9 @@ import com.example.data.TripEntity
 import com.example.model.SpeedUnit
 import com.example.model.TelemetryFormatter
 import com.example.ui.components.MiniRoutePreviewCanvas
+import com.example.ui.components.MotoCard
 import com.example.ui.components.VectorRouteMapCanvas
-import com.example.ui.theme.AmberWarning
-import com.example.ui.theme.CarbonBlack
-import com.example.ui.theme.CrimsonRed
-import com.example.ui.theme.CyberCyan
-import com.example.ui.theme.NeonGreen
-import com.example.ui.theme.OrbitronFontFamily
-import com.example.ui.theme.PanelBorderGray
-import com.example.ui.theme.PanelDarkGray
-import com.example.ui.theme.PanelElevatedGray
-import com.example.ui.theme.TextPrimaryWhite
-import com.example.ui.theme.TextSecondarySilver
+import com.example.ui.theme.InterFontFamily
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -82,6 +75,8 @@ fun HistoryScreen(
     onStartSimulationFromEmpty: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val cs = MaterialTheme.colorScheme
+
     var selectedTrip by remember { mutableStateOf<TripEntity?>(null) }
     var showOverviewMap by remember { mutableStateOf(true) }
     var showClearAllDialog by remember { mutableStateOf(false) }
@@ -103,7 +98,6 @@ fun HistoryScreen(
         return
     }
 
-    // Aggregate route points from the latest recorded trip (or combined trips) for top overview map
     val latestTripWithRoute = remember(trips) {
         trips.firstOrNull { RouteJsonCodec.decodeRoutePoints(it.routePointsJson).isNotEmpty() }
             ?: trips.firstOrNull()
@@ -115,16 +109,16 @@ fun HistoryScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(CarbonBlack),
+            .background(cs.background),
         contentAlignment = Alignment.TopCenter
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .widthIn(max = 600.dp)
-                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .padding(horizontal = 16.dp, vertical = 14.dp)
         ) {
-            // Header
+            // 1. HEADER: Riwayat Perjalanan + Total recorded trips + Clean subtitle
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -132,154 +126,156 @@ fun HistoryScreen(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "RIWAYAT & PETA PERJALANAN",
-                        fontFamily = OrbitronFontFamily,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 19.sp,
-                        color = NeonGreen
+                        text = "Riwayat Perjalanan",
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = cs.onBackground
                     )
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "${trips.size} perjalanan tercatat otomatis",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextSecondarySilver
+                        text = "${trips.size} perjalanan tercatat • Ketuk kartu untuk melihat peta detail",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = cs.onSurfaceVariant
                     )
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Toggle Overview Map visibility button
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(10.dp))
-                            .background(if (showOverviewMap) NeonGreen.copy(alpha = 0.18f) else PanelElevatedGray)
+                            .background(if (showOverviewMap) cs.secondary.copy(alpha = 0.12f) else cs.surface)
                             .border(
-                                1.dp,
-                                if (showOverviewMap) NeonGreen else PanelBorderGray,
-                                RoundedCornerShape(10.dp)
+                                width = 1.dp,
+                                color = if (showOverviewMap) cs.secondary.copy(alpha = 0.4f) else cs.outline,
+                                shape = RoundedCornerShape(10.dp)
                             )
                             .clickable { showOverviewMap = !showOverviewMap }
-                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
                             .testTag("btn_toggle_history_overview_map")
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
-                                imageVector = Icons.Default.Map,
+                                imageVector = Icons.Outlined.Map,
                                 contentDescription = "Tampilkan Peta Rute",
-                                tint = if (showOverviewMap) NeonGreen else TextSecondarySilver,
-                                modifier = Modifier.size(16.dp)
+                                tint = if (showOverviewMap) cs.secondary else cs.onSurfaceVariant,
+                                modifier = Modifier.size(15.dp)
                             )
-                            Spacer(modifier = Modifier.width(5.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = if (showOverviewMap) "TUTUP PETA" else "BUKA PETA",
+                                text = if (showOverviewMap) "Tutup Peta" else "Buka Peta",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = if (showOverviewMap) NeonGreen else TextSecondarySilver
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (showOverviewMap) cs.secondary else cs.onSurfaceVariant
                             )
                         }
                     }
 
                     if (trips.isNotEmpty()) {
-                        Spacer(modifier = Modifier.width(4.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
                         IconButton(
                             onClick = { showClearAllDialog = true },
-                            modifier = Modifier.testTag("btn_clear_all_history")
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(cs.error.copy(alpha = 0.10f))
+                                .border(1.dp, cs.error.copy(alpha = 0.30f), RoundedCornerShape(10.dp))
+                                .testTag("btn_clear_all_history")
                         ) {
                             Icon(
-                                imageVector = Icons.Default.DeleteSweep,
+                                imageVector = Icons.Outlined.DeleteSweep,
                                 contentDescription = "Hapus Semua Riwayat",
-                                tint = CrimsonRed
+                                tint = cs.error,
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            // Permanent Total Odometer Protection Notice Banner
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(PanelElevatedGray)
-                    .border(1.dp, NeonGreen.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Lock,
-                    contentDescription = "Proteksi Odometer Permanen",
-                    tint = NeonGreen,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Total Odometer Permanen (${TelemetryFormatter.formatOdometer(totalPermanentOdometerKm, speedUnit.multiplier)} ${speedUnit.distanceSymbol}) tetap utuh meskipun riwayat dihapus.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontSize = 11.sp,
-                    color = TextPrimaryWhite
-                )
+            // 2. Small Informational Card for Permanent Odometer Protection
+            MotoCard(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(cs.primary.copy(alpha = 0.12f))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Lock,
+                            contentDescription = "Proteksi Odometer Permanen",
+                            tint = cs.primary,
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "Proteksi Odometer Permanen: Total ${TelemetryFormatter.formatOdometer(totalPermanentOdometerKm, speedUnit.multiplier)} ${speedUnit.distanceSymbol} tersimpan aman dan tidak terpengaruh saat riwayat dihapus.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = cs.onSurfaceVariant
+                    )
+                }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
+            // 3. Trip Cards List + Optional Overview Map + Clean Empty State
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(bottom = 24.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
-                // Interactive Street Map Overview right on the History Screen!
                 if (showOverviewMap) {
                     item {
                         VectorRouteMapCanvas(
                             routePoints = overviewRoutePoints,
                             startLabel = latestTripWithRoute?.startCoordLabel ?: "Menunggu Rute GPS",
                             endLabel = latestTripWithRoute?.endCoordLabel ?: "Titik Parkir GPS",
-                            mapHeight = 225.dp
+                            mapHeight = 220.dp
                         )
                     }
                 }
 
                 if (trips.isEmpty()) {
                     item {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(18.dp))
-                                .background(PanelDarkGray)
-                                .border(1.dp, PanelBorderGray, RoundedCornerShape(18.dp))
-                                .padding(24.dp)
-                        ) {
+                        MotoCard(modifier = Modifier.fillMaxWidth()) {
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
+                                verticalArrangement = Arrangement.Center,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 28.dp, vertical = 36.dp)
                             ) {
                                 Box(
                                     contentAlignment = Alignment.Center,
                                     modifier = Modifier
-                                        .size(60.dp)
+                                        .size(52.dp)
                                         .clip(CircleShape)
-                                        .background(PanelElevatedGray)
-                                        .border(1.dp, PanelBorderGray, CircleShape)
+                                        .background(cs.secondary.copy(alpha = 0.10f))
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.Route,
+                                        imageVector = Icons.Outlined.Route,
                                         contentDescription = "Belum Ada Riwayat",
-                                        tint = CyberCyan,
-                                        modifier = Modifier.size(30.dp)
+                                        tint = cs.secondary,
+                                        modifier = Modifier.size(24.dp)
                                     )
                                 }
-                                Spacer(modifier = Modifier.height(12.dp))
+                                Spacer(modifier = Modifier.height(14.dp))
                                 Text(
                                     text = "Belum Ada Riwayat Perjalanan",
                                     style = MaterialTheme.typography.titleMedium,
-                                    color = TextPrimaryWhite
+                                    color = cs.onSurface
                                 )
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Text(
-                                    text = "Ketika Auto Tracking aktif, GPS HP menyala, dan motor mulai bergerak di jalan, rute GPS dan statistik setiap perjalanan otomatis tersimpan dan tampil pada peta di atas.",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontSize = 12.sp,
-                                    color = TextSecondarySilver,
+                                    text = "Saat Auto Tracking aktif dan motor mulai bergerak, setiap sesi perjalanan beserta rute GPS dan statistiknya akan tersimpan otomatis di sini.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = cs.onSurfaceVariant,
                                     textAlign = TextAlign.Center
                                 )
                             }
@@ -290,8 +286,7 @@ fun HistoryScreen(
                         TripHistoryItemCard(
                             trip = trip,
                             speedUnit = speedUnit,
-                            onClick = { selectedTrip = trip },
-                            onDelete = { onDeleteTrip(trip.id) }
+                            onClick = { selectedTrip = trip }
                         )
                     }
                 }
@@ -302,14 +297,14 @@ fun HistoryScreen(
     if (showClearAllDialog) {
         AlertDialog(
             onDismissRequest = { showClearAllDialog = false },
-            containerColor = PanelDarkGray,
-            titleContentColor = TextPrimaryWhite,
-            textContentColor = TextSecondarySilver,
+            containerColor = cs.surface,
+            titleContentColor = cs.onSurface,
+            textContentColor = cs.onSurfaceVariant,
             title = { Text("Hapus Semua Riwayat Perjalanan?") },
             text = {
                 Text(
-                    "Seluruh daftar riwayat perjalanan akan dihapus dari database. " +
-                        "Total Odometer Permanen Anda (${TelemetryFormatter.formatOdometer(totalPermanentOdometerKm, speedUnit.multiplier)} ${speedUnit.distanceSymbol}) TIDAK AKAN TERHAPUS."
+                    "Seluruh daftar riwayat perjalanan akan dihapus. " +
+                        "Total Odometer Permanen Anda (${TelemetryFormatter.formatOdometer(totalPermanentOdometerKm, speedUnit.multiplier)} ${speedUnit.distanceSymbol}) tetap utuh dan tidak akan terhapus."
                 )
             },
             confirmButton = {
@@ -319,7 +314,7 @@ fun HistoryScreen(
                         onDeleteAllTrips()
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = CrimsonRed,
+                        containerColor = cs.error,
                         contentColor = Color.White
                     )
                 ) {
@@ -328,7 +323,7 @@ fun HistoryScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showClearAllDialog = false }) {
-                    Text("Batal", color = TextSecondarySilver)
+                    Text("Batal", color = cs.onSurfaceVariant)
                 }
             }
         )
@@ -339,9 +334,9 @@ fun HistoryScreen(
 private fun TripHistoryItemCard(
     trip: TripEntity,
     speedUnit: SpeedUnit,
-    onClick: () -> Unit,
-    onDelete: () -> Unit
+    onClick: () -> Unit
 ) {
+    val cs = MaterialTheme.colorScheme
     val indoLocale = remember { Locale("id", "ID") }
     val dateFmt = remember { SimpleDateFormat("EEEE, dd MMM yyyy", indoLocale) }
     val timeFmt = remember { SimpleDateFormat("HH:mm", indoLocale) }
@@ -350,121 +345,125 @@ private fun TripHistoryItemCard(
     }
 
     val dateStr = dateFmt.format(Date(trip.startTimeMillis))
-    val timeRangeStr = "${timeFmt.format(Date(trip.startTimeMillis))} - ${timeFmt.format(Date(trip.endTimeMillis))} WIB"
+    val startTimeStr = timeFmt.format(Date(trip.startTimeMillis))
+    val endTimeStr = timeFmt.format(Date(trip.endTimeMillis))
 
-    Column(
+    MotoCard(
+        onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .background(PanelDarkGray)
-            .border(1.dp, PanelBorderGray, RoundedCornerShape(18.dp))
-            .clickable { onClick() }
-            .padding(16.dp)
             .testTag("trip_item_card_${trip.id}")
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Mini Route Preview Thumbnail on the left of each trip card
-            MiniRoutePreviewCanvas(
-                routePoints = routePoints,
-                modifier = Modifier.size(width = 72.dp, height = 56.dp)
-            )
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = dateStr,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = TextPrimaryWhite
+        Column(modifier = Modifier.padding(16.dp)) {
+            // Top Row: Route Preview, Date + Start/End Time, Distance
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                MiniRoutePreviewCanvas(
+                    routePoints = routePoints,
+                    modifier = Modifier.size(width = 64.dp, height = 50.dp)
                 )
-                Row(verticalAlignment = Alignment.CenterVertically) {
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = dateStr,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = cs.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Outlined.Schedule,
+                            contentDescription = "Waktu Mulai dan Selesai",
+                            tint = cs.secondary,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "$startTimeStr – $endTimeStr",
+                            style = TextStyle(
+                                fontFamily = InterFontFamily,
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 12.sp,
+                                fontFeatureSettings = "tnum"
+                            ),
+                            color = cs.secondary
+                        )
+                    }
+                }
+
+                // Distance value
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(
+                        text = TelemetryFormatter.formatOdometerHighPrecision(trip.distanceKm, speedUnit.multiplier),
+                        style = TextStyle(
+                            fontFamily = InterFontFamily,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 22.sp,
+                            fontFeatureSettings = "tnum"
+                        ),
+                        color = cs.onSurface
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = speedUnit.distanceSymbol,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = cs.secondary,
+                        modifier = Modifier.padding(bottom = 3.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+            HorizontalDivider(thickness = 1.dp, color = cs.outline)
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Bottom Row: Duration, Average Speed, Maximum Speed
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TripSubMetric(
+                    label = "Durasi",
+                    value = TelemetryFormatter.formatDurationReadable(trip.durationSeconds)
+                )
+                TripSubMetric(
+                    label = "Rata-rata",
+                    value = "${TelemetryFormatter.formatSpeedOneDecimal(trip.avgSpeedKmh, speedUnit.multiplier)} ${speedUnit.symbol}"
+                )
+                TripSubMetric(
+                    label = "Maksimal",
+                    value = "${TelemetryFormatter.formatSpeedOneDecimal(trip.maxSpeedKmh, speedUnit.multiplier)} ${speedUnit.symbol}"
+                )
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(cs.secondary.copy(alpha = 0.10f))
+                        .padding(horizontal = 9.dp, vertical = 5.dp)
+                ) {
                     Icon(
-                        imageVector = Icons.Default.Schedule,
-                        contentDescription = "Waktu Mulai dan Selesai",
-                        tint = CyberCyan,
+                        imageVector = Icons.Outlined.Map,
+                        contentDescription = "Buka Peta Rute Lengkap",
+                        tint = cs.secondary,
                         modifier = Modifier.size(13.dp)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = timeRangeStr,
+                        text = "Detail",
                         style = MaterialTheme.typography.labelSmall,
-                        color = CyberCyan
+                        fontWeight = FontWeight.SemiBold,
+                        color = cs.secondary
                     )
                 }
-                Text(
-                    text = "${routePoints.size} titik koordinat rute",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontSize = 10.sp,
-                    color = TextSecondarySilver
-                )
-            }
-
-            // Distance Badge
-            Row(verticalAlignment = Alignment.Bottom) {
-                Text(
-                    text = TelemetryFormatter.formatOdometerHighPrecision(trip.distanceKm, speedUnit.multiplier),
-                    fontFamily = OrbitronFontFamily,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 20.sp,
-                    color = NeonGreen
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = speedUnit.distanceSymbol,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = NeonGreen,
-                    modifier = Modifier.padding(bottom = 3.dp)
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Metrics row inside trip card
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
-                .background(PanelElevatedGray)
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            TripSubMetric(
-                label = "DURASI",
-                value = TelemetryFormatter.formatDurationReadable(trip.durationSeconds)
-            )
-            TripSubMetric(
-                label = "RATA-RATA",
-                value = "${TelemetryFormatter.formatSpeedOneDecimal(trip.avgSpeedKmh, speedUnit.multiplier)} ${speedUnit.symbol}"
-            )
-            TripSubMetric(
-                label = "MAKSIMAL",
-                value = "${TelemetryFormatter.formatSpeedOneDecimal(trip.maxSpeedKmh, speedUnit.multiplier)} ${speedUnit.symbol}"
-            )
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(NeonGreen.copy(alpha = 0.16f))
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Map,
-                    contentDescription = "Buka Peta Rute Lengkap",
-                    tint = NeonGreen,
-                    modifier = Modifier.size(15.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = "BUKA PETA",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = NeonGreen
-                )
             }
         }
     }
@@ -472,17 +471,23 @@ private fun TripHistoryItemCard(
 
 @Composable
 private fun TripSubMetric(label: String, value: String) {
+    val cs = MaterialTheme.colorScheme
     Column {
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            fontSize = 9.sp,
-            color = TextSecondarySilver
+            color = cs.onSurfaceVariant
         )
+        Spacer(modifier = Modifier.height(2.dp))
         Text(
             text = value,
-            style = MaterialTheme.typography.labelMedium,
-            color = TextPrimaryWhite
+            style = TextStyle(
+                fontFamily = InterFontFamily,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+                fontFeatureSettings = "tnum"
+            ),
+            color = cs.onSurface
         )
     }
 }
@@ -495,6 +500,7 @@ private fun TripDetailView(
     onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val cs = MaterialTheme.colorScheme
     val indoLocale = remember { Locale("id", "ID") }
     val dateFmt = remember { SimpleDateFormat("EEEE, dd MMMM yyyy", indoLocale) }
     val timeFmt = remember { SimpleDateFormat("HH:mm:ss", indoLocale) }
@@ -505,7 +511,7 @@ private fun TripDetailView(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(CarbonBlack),
+            .background(cs.background),
         contentAlignment = Alignment.TopCenter
     ) {
         LazyColumn(
@@ -524,101 +530,111 @@ private fun TripDetailView(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton(
                             onClick = onBack,
-                            modifier = Modifier.testTag("btn_back_from_trip_detail")
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(cs.surface)
+                                .border(1.dp, cs.outline, RoundedCornerShape(10.dp))
+                                .testTag("btn_back_from_trip_detail")
                         ) {
                             Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
                                 contentDescription = "Kembali ke Riwayat",
-                                tint = NeonGreen
+                                tint = cs.onSurface,
+                                modifier = Modifier.size(18.dp)
                             )
                         }
+                        Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = "PETA & DETAIL PERJALANAN",
-                                fontFamily = OrbitronFontFamily,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 18.sp,
-                                color = NeonGreen
+                                text = "Detail Perjalanan",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = cs.onBackground
                             )
                             Text(
                                 text = dateFmt.format(Date(trip.startTimeMillis)),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = TextSecondarySilver
+                                style = MaterialTheme.typography.bodySmall,
+                                color = cs.onSurfaceVariant
                             )
                         }
                     }
 
-                    IconButton(onClick = onDelete) {
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(cs.error.copy(alpha = 0.10f))
+                            .border(1.dp, cs.error.copy(alpha = 0.30f), RoundedCornerShape(10.dp))
+                    ) {
                         Icon(
-                            imageVector = Icons.Default.DeleteOutline,
+                            imageVector = Icons.Outlined.DeleteOutline,
                             contentDescription = "Hapus Perjalanan Ini",
-                            tint = CrimsonRed
+                            tint = cs.error,
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
             }
 
-            // Full Interactive Street + Vector Map
             item {
                 VectorRouteMapCanvas(
                     routePoints = routePoints,
                     startLabel = trip.startCoordLabel,
                     endLabel = trip.endCoordLabel,
-                    mapHeight = 320.dp
+                    mapHeight = 300.dp
                 )
             }
 
-            // Detailed Telemetry Summary Card
             item {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(PanelDarkGray)
-                        .border(1.dp, PanelBorderGray, RoundedCornerShape(18.dp))
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Text(
-                        text = "RINGKASAN TELEMETRI PERJALANAN",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = CyberCyan
-                    )
+                MotoCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            text = "Ringkasan Perjalanan",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = cs.onSurface
+                        )
+                        HorizontalDivider(thickness = 1.dp, color = cs.outline)
 
-                    DetailRow(
-                        label = "Total Jarak Tempuh",
-                        value = "${TelemetryFormatter.formatOdometerHighPrecision(trip.distanceKm, speedUnit.multiplier)} ${speedUnit.distanceSymbol}",
-                        highlight = NeonGreen
-                    )
-                    DetailRow(
-                        label = "Waktu Mulai",
-                        value = "${timeFmt.format(Date(trip.startTimeMillis))} WIB"
-                    )
-                    DetailRow(
-                        label = "Waktu Selesai",
-                        value = "${timeFmt.format(Date(trip.endTimeMillis))} WIB"
-                    )
-                    DetailRow(
-                        label = "Durasi Berkendara",
-                        value = TelemetryFormatter.formatDurationHms(trip.durationSeconds)
-                    )
-                    DetailRow(
-                        label = "Kecepatan Rata-Rata",
-                        value = "${TelemetryFormatter.formatSpeedOneDecimal(trip.avgSpeedKmh, speedUnit.multiplier)} ${speedUnit.symbol}"
-                    )
-                    DetailRow(
-                        label = "Kecepatan Maksimal",
-                        value = "${TelemetryFormatter.formatSpeedOneDecimal(trip.maxSpeedKmh, speedUnit.multiplier)} ${speedUnit.symbol}",
-                        highlight = AmberWarning
-                    )
-                    DetailRow(
-                        label = "Koordinat Awal",
-                        value = trip.startCoordLabel
-                    )
-                    DetailRow(
-                        label = "Koordinat Akhir",
-                        value = trip.endCoordLabel
-                    )
+                        DetailRow(
+                            label = "Total Jarak Tempuh",
+                            value = "${TelemetryFormatter.formatOdometerHighPrecision(trip.distanceKm, speedUnit.multiplier)} ${speedUnit.distanceSymbol}",
+                            highlight = cs.primary
+                        )
+                        DetailRow(
+                            label = "Waktu Mulai",
+                            value = timeFmt.format(Date(trip.startTimeMillis))
+                        )
+                        DetailRow(
+                            label = "Waktu Selesai",
+                            value = timeFmt.format(Date(trip.endTimeMillis))
+                        )
+                        DetailRow(
+                            label = "Durasi Berkendara",
+                            value = TelemetryFormatter.formatDurationHms(trip.durationSeconds)
+                        )
+                        DetailRow(
+                            label = "Kecepatan Rata-Rata",
+                            value = "${TelemetryFormatter.formatSpeedOneDecimal(trip.avgSpeedKmh, speedUnit.multiplier)} ${speedUnit.symbol}",
+                            highlight = cs.secondary
+                        )
+                        DetailRow(
+                            label = "Kecepatan Maksimal",
+                            value = "${TelemetryFormatter.formatSpeedOneDecimal(trip.maxSpeedKmh, speedUnit.multiplier)} ${speedUnit.symbol}",
+                            highlight = cs.secondary
+                        )
+                        DetailRow(
+                            label = "Koordinat Awal",
+                            value = trip.startCoordLabel
+                        )
+                        DetailRow(
+                            label = "Koordinat Akhir",
+                            value = trip.endCoordLabel
+                        )
+                    }
                 }
             }
         }
@@ -629,8 +645,9 @@ private fun TripDetailView(
 private fun DetailRow(
     label: String,
     value: String,
-    highlight: Color = TextPrimaryWhite
+    highlight: Color = MaterialTheme.colorScheme.onSurface
 ) {
+    val cs = MaterialTheme.colorScheme
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -639,11 +656,16 @@ private fun DetailRow(
         Text(
             text = label,
             style = MaterialTheme.typography.bodyMedium,
-            color = TextSecondarySilver
+            color = cs.onSurfaceVariant
         )
         Text(
             text = value,
-            style = MaterialTheme.typography.labelLarge,
+            style = TextStyle(
+                fontFamily = InterFontFamily,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 14.sp,
+                fontFeatureSettings = "tnum"
+            ),
             color = highlight
         )
     }

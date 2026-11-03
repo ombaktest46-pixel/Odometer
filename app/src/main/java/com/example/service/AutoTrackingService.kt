@@ -662,6 +662,7 @@ class AutoTrackingService : Service() {
     }
 
     private fun updateNotificationNow() {
+        com.example.widget.MotoOdoWidgetProvider.updateAllWidgets(this)
         if (!currentSettings.notificationsEnabled) return
         val state = TelemetryStateHolder.telemetryState.value
         if (!state.isAutoTrackingEnabled) return

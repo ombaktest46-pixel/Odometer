@@ -14,15 +14,15 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BarChart
-import androidx.compose.material.icons.filled.Dashboard
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.History
@@ -30,6 +30,7 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -48,9 +49,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -60,14 +63,7 @@ import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.HistoryScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.StatisticsScreen
-import com.example.ui.theme.CarbonBlack
-import com.example.ui.theme.CyberCyan
 import com.example.ui.theme.MyApplicationTheme
-import com.example.ui.theme.NeonGreen
-import com.example.ui.theme.PanelDarkGray
-import com.example.ui.theme.PanelElevatedGray
-import com.example.ui.theme.TextPrimaryWhite
-import com.example.ui.theme.TextSecondarySilver
 import com.example.viewmodel.MotoOdoViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -76,36 +72,31 @@ import java.util.Locale
 enum class MotoOdoTab(
     val routeId: String,
     val label: String,
-    val selectedIcon: ImageVector,
-    val unselectedIcon: ImageVector,
+    val outlineIcon: ImageVector,
     val testTag: String
 ) {
     DASHBOARD(
         routeId = "dashboard",
         label = "Dashboard",
-        selectedIcon = Icons.Filled.Dashboard,
-        unselectedIcon = Icons.Outlined.Dashboard,
+        outlineIcon = Icons.Outlined.Dashboard,
         testTag = "nav_tab_dashboard"
     ),
     HISTORY(
         routeId = "history",
         label = "Riwayat",
-        selectedIcon = Icons.Filled.History,
-        unselectedIcon = Icons.Outlined.History,
+        outlineIcon = Icons.Outlined.History,
         testTag = "nav_tab_history"
     ),
     STATISTICS(
         routeId = "statistics",
         label = "Statistik",
-        selectedIcon = Icons.Filled.BarChart,
-        unselectedIcon = Icons.Outlined.BarChart,
+        outlineIcon = Icons.Outlined.BarChart,
         testTag = "nav_tab_statistics"
     ),
     SETTINGS(
         routeId = "settings",
         label = "Pengaturan",
-        selectedIcon = Icons.Filled.Settings,
-        unselectedIcon = Icons.Outlined.Settings,
+        outlineIcon = Icons.Outlined.Settings,
         testTag = "nav_tab_settings"
     )
 }
@@ -122,8 +113,9 @@ class MainActivity : ComponentActivity() {
         )
 
         setContent {
-            MyApplicationTheme {
-                val viewModel: MotoOdoViewModel = viewModel(factory = factory)
+            val viewModel: MotoOdoViewModel = viewModel(factory = factory)
+            val settingsState by viewModel.settingsState.collectAsStateWithLifecycle()
+            MyApplicationTheme(themeMode = settingsState.themeMode) {
                 MotoOdoMainApp(viewModel = viewModel)
             }
         }
@@ -133,6 +125,9 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MotoOdoMainApp(viewModel: MotoOdoViewModel) {
     val context = LocalContext.current
+    val isSystemDark = isSystemInDarkTheme()
+    val cs = MaterialTheme.colorScheme
+
     val telemetryState by viewModel.telemetryState.collectAsStateWithLifecycle()
     val settingsState by viewModel.settingsState.collectAsStateWithLifecycle()
     val tripsState by viewModel.tripsState.collectAsStateWithLifecycle()
@@ -152,21 +147,18 @@ fun MotoOdoMainApp(viewModel: MotoOdoViewModel) {
         }
     }
 
-    // Automatically resume Foreground Service if Auto Tracking was previously enabled
     LaunchedEffect(settingsState.isAutoTrackingEnabled, hasLocationPermission) {
         if (settingsState.isAutoTrackingEnabled && hasLocationPermission) {
             AutoTrackingService.startService(context)
         }
     }
 
-    // Background Location Permission Launcher (Android 10+)
     val backgroundPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { _ ->
         viewModel.startAutoTracking(context)
     }
 
-    // Foreground Location + Notification Permission Launcher
     val primaryPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
@@ -180,12 +172,10 @@ fun MotoOdoMainApp(viewModel: MotoOdoViewModel) {
                 showBackgroundLocationRationale = true
             }
         } else {
-            // Even if denied in an emulator without GPS permissions, start service or inform user
             viewModel.startAutoTracking(context)
         }
     }
 
-    // JSON Backup & Restore Launchers
     val exportBackupLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
     ) { uri: Uri? ->
@@ -218,7 +208,6 @@ fun MotoOdoMainApp(viewModel: MotoOdoViewModel) {
         }
     }
 
-    // Handle system back button on secondary tabs to return to Dashboard
     if (currentTab != MotoOdoTab.DASHBOARD) {
         BackHandler {
             currentTab = MotoOdoTab.DASHBOARD
@@ -227,40 +216,45 @@ fun MotoOdoMainApp(viewModel: MotoOdoViewModel) {
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
-        containerColor = CarbonBlack,
+        containerColor = cs.background,
         contentWindowInsets = WindowInsets.safeDrawing,
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         bottomBar = {
-            NavigationBar(
-                containerColor = PanelDarkGray,
-                tonalElevation = 8.dp
-            ) {
-                MotoOdoTab.entries.forEach { tab ->
-                    val isSelected = currentTab == tab
-                    NavigationBarItem(
-                        selected = isSelected,
-                        onClick = { currentTab = tab },
-                        icon = {
-                            Icon(
-                                imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
-                                contentDescription = tab.label
-                            )
-                        },
-                        label = {
-                            Text(
-                                text = tab.label,
-                                style = MaterialTheme.typography.labelSmall
-                            )
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = CarbonBlack,
-                            selectedTextColor = NeonGreen,
-                            indicatorColor = NeonGreen,
-                            unselectedIconColor = TextSecondarySilver,
-                            unselectedTextColor = TextSecondarySilver
-                        ),
-                        modifier = Modifier.testTag(tab.testTag)
-                    )
+            Column(modifier = Modifier.fillMaxWidth()) {
+                HorizontalDivider(thickness = 1.dp, color = cs.outline)
+                NavigationBar(
+                    containerColor = cs.surface,
+                    tonalElevation = 0.dp
+                ) {
+                    MotoOdoTab.entries.forEach { tab ->
+                        val isSelected = currentTab == tab
+                        NavigationBarItem(
+                            selected = isSelected,
+                            onClick = { currentTab = tab },
+                            icon = {
+                                Icon(
+                                    imageVector = tab.outlineIcon,
+                                    contentDescription = tab.label,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            },
+                            label = {
+                                Text(
+                                    text = tab.label,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium
+                                )
+                            },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = cs.primary,
+                                selectedTextColor = cs.primary,
+                                indicatorColor = cs.primary.copy(alpha = 0.12f),
+                                unselectedIconColor = cs.onSurfaceVariant,
+                                unselectedTextColor = cs.onSurfaceVariant
+                            ),
+                            modifier = Modifier.testTag(tab.testTag)
+                        )
+                    }
                 }
             }
         }
@@ -276,6 +270,11 @@ fun MotoOdoMainApp(viewModel: MotoOdoViewModel) {
                     onOpenLocationSettings = { openLocationSourceSettings(context) },
                     onResetTrip = { viewModel.resetTripOdometer(context) },
                     onOpenHistoryTab = { currentTab = MotoOdoTab.HISTORY },
+                    onPinWidgetClick = { viewModel.requestPinHomeWidget(context) },
+                    onToggleThemeMode = { viewModel.toggleDarkLightMode(isSystemDark) },
+                    onBikeNameChanged = { viewModel.setBikeName(context, it) },
+                    onWidgetThemeSelected = { viewModel.setWidgetTheme(context, it) },
+                    onQuickCalibrateOdometer = { viewModel.setProtectedTotalOdometer(it, context) },
                     modifier = Modifier.padding(innerPadding)
                 )
             }
@@ -312,12 +311,13 @@ fun MotoOdoMainApp(viewModel: MotoOdoViewModel) {
                             viewModel.stopAutoTracking(context)
                         }
                     },
+                    onThemeModeSelected = { viewModel.setThemeMode(it) },
                     onSensitivitySelected = { viewModel.setSensitivityLevel(it) },
                     onAccuracyFilterSelected = { viewModel.setGpsAccuracyFilter(it) },
                     onPowerModeSelected = { viewModel.setPowerMode(it) },
                     onSpeedUnitSelected = { viewModel.setSpeedUnit(it) },
                     onCalibrationChanged = { viewModel.setCalibrationFactor(it) },
-                    onProtectedTotalOdometerAdjust = { viewModel.setProtectedTotalOdometer(it) },
+                    onProtectedTotalOdometerAdjust = { viewModel.setProtectedTotalOdometer(it, context) },
                     onResetTrip = { viewModel.resetTripOdometer(context) },
                     onNotificationsEnabledChanged = { viewModel.setNotificationsEnabled(it) },
                     onExportBackupClick = {
@@ -339,9 +339,9 @@ fun MotoOdoMainApp(viewModel: MotoOdoViewModel) {
     if (showBackgroundLocationRationale && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
         AlertDialog(
             onDismissRequest = { showBackgroundLocationRationale = false },
-            containerColor = PanelDarkGray,
-            titleContentColor = TextPrimaryWhite,
-            textContentColor = TextSecondarySilver,
+            containerColor = cs.surface,
+            titleContentColor = cs.onSurface,
+            textContentColor = cs.onSurfaceVariant,
             title = { Text("Optimalkan Pelacakan Latar Belakang") },
             text = {
                 Text(
@@ -355,8 +355,8 @@ fun MotoOdoMainApp(viewModel: MotoOdoViewModel) {
                         backgroundPermissionLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = CyberCyan,
-                        contentColor = CarbonBlack
+                        containerColor = cs.primary,
+                        contentColor = Color.White
                     )
                 ) {
                     Text("Lanjutkan")
@@ -364,7 +364,7 @@ fun MotoOdoMainApp(viewModel: MotoOdoViewModel) {
             },
             dismissButton = {
                 TextButton(onClick = { showBackgroundLocationRationale = false }) {
-                    Text("Nanti Saja", color = PanelElevatedGray)
+                    Text("Nanti Saja", color = cs.onSurfaceVariant)
                 }
             }
         )

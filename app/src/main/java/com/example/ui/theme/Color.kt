@@ -2,27 +2,45 @@ package com.example.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Cyber-Tactical Digital Motorcycle Cluster Palette
-val CarbonBlack = Color(0xFF07090C)
-val CockpitDarkBg = Color(0xFF0B0E14)
-val PanelDarkGray = Color(0xFF121822)
-val PanelElevatedGray = Color(0xFF192230)
-val PanelBorderGray = Color(0xFF233042)
+// ============================================================================
+// MOTO ODO — SWISS / MINIMALIST AUTOMOTIVE COLOR SYSTEM
+// Primary Visual Identity: WHITE, RED, GREEN, BLUE
+// ============================================================================
 
-val NeonGreen = Color(0xFF00FF66)
-val NeonGreenDim = Color(0xFF00B849)
-val NeonGreenGlow = Color(0x3300FF66)
+// LIGHT MODE PALETTE
+val LightBackground = Color(0xFFF6F7F9)
+val LightSurface = Color(0xFFFFFFFF)
+val LightSurfaceElevated = Color(0xFFF1F3F7)
+val LightTextPrimary = Color(0xFF171A21)
+val LightTextSecondary = Color(0xFF737B88)
+val LightBorder = Color(0xFFE7EAF0)
 
-val CyberCyan = Color(0xFF00E5FF)
-val CyberCyanDim = Color(0xFF0099B8)
-val CyberCyanGlow = Color(0x3300E5FF)
+val LightGreen = Color(0xFF16A36A) // Tracking & Success
+val LightRed = Color(0xFFE5484D)   // Warning & Important/Destructive Actions
+val LightBlue = Color(0xFF3978D5)  // Information & Statistics
 
-val AmberWarning = Color(0xFFFFB300)
-val AmberGlow = Color(0x33FFB300)
+// DARK MODE PALETTE
+val DarkBackground = Color(0xFF101216)
+val DarkSurface = Color(0xFF191E26)
+val DarkSurfaceElevated = Color(0xFF202733)
+val DarkTextPrimary = Color(0xFFF5F7FA)
+val DarkTextSecondary = Color(0xFFA0A8B5)
+val DarkBorder = Color(0xFF2A3340)
 
-val CrimsonRed = Color(0xFFFF3B5C)
-val CrimsonGlow = Color(0x33FF3B5C)
+val DarkGreen = Color(0xFF20B978)  // Tracking & Success
+val DarkRed = Color(0xFFF16B70)    // Warning & Important/Destructive Actions
+val DarkBlue = Color(0xFF65A0F0)   // Information & Statistics
 
-val TextPrimaryWhite = Color(0xFFF3F7FA)
-val TextSecondarySilver = Color(0xFF9BA9B8)
-val TextMutedSlate = Color(0xFF5C6C7F)
+// Compatibility tokens mapped to the clean palette
+val CarbonBlack = DarkBackground
+val CockpitDarkBg = DarkBackground
+val PanelDarkGray = DarkSurface
+val PanelElevatedGray = DarkSurfaceElevated
+val PanelBorderGray = DarkBorder
+val NeonGreen = DarkGreen
+val CyberCyan = DarkBlue
+val AmberWarning = LightRed
+val CrimsonRed = DarkRed
+val TextPrimaryWhite = DarkTextPrimary
+val TextSecondarySilver = DarkTextSecondary
+val TextMutedSlate = LightTextSecondary
