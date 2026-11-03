@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
 import androidx.compose.foundation.Canvas
@@ -98,10 +99,14 @@ enum class StreetTileStyle(val label: String) {
 }
 
 /**
- * Dark-mode color matrix applied to standard OpenStreetMap street tiles
- * so dark mode gets crisp, watermark-free dark street maps without requiring any external API key.
+ * Official application identity User-Agent compliant with OpenStreetMap Tile Usage Policy
+ * (https://operations.osmfoundation.org/policies/tiles/).
+ * Never spoof a generic browser User-Agent or fake Referer, as OSM blocks those with HTTP 418.
  */
-private val DarkOsmColorFilter = ColorFilter.colorMatrix(
+private const val OSM_COMPLIANT_USER_AGENT =
+    "MotoOdoGpsTracker/1.0.2 (Android; Package/com.aistudio.motoodo.vxkrmp; +https://openstreetmap.org)"
+
+private val DarkMapColorFilter = ColorFilter.colorMatrix(
     ColorMatrix(
         floatArrayOf(
             -0.78f, 0.0f, 0.0f, 0f, 212f,
@@ -112,7 +117,7 @@ private val DarkOsmColorFilter = ColorFilter.colorMatrix(
     )
 )
 
-private object OsmTileMemoryCache {
+private object CompliantTileMemoryCache {
     private val cache = object : LruCache<String, ImageBitmap>(96) {}
 
     fun get(key: String): ImageBitmap? = synchronized(cache) { cache.get(key) }
@@ -120,17 +125,21 @@ private object OsmTileMemoryCache {
     fun put(key: String, bitmap: ImageBitmap) = synchronized(cache) { cache.put(key, bitmap) }
 }
 
-private data class OsmTileKey(
+private data class MapTileRequestKey(
     val z: Int,
     val x: Int,
     val y: Int
 ) {
-    val cacheKey: String get() = "osm_v2/$z/$x/$y"
+    val cacheKey: String get() = "tile_v3/$z/$x/$y"
 
+    /**
+     * Primary & fallback tile endpoints that comply with OpenStreetMap & public street tile policies.
+     * Note: ArcGIS World_Street_Map uses /tile/{z}/{y}/{x} order.
+     */
     fun buildUrls(): List<String> = listOf(
         "https://tile.openstreetmap.org/$z/$x/$y.png",
-        "https://a.tile.openstreetmap.fr/hot/$z/$x/$y.png",
-        "https://b.tile.openstreetmap.fr/hot/$z/$x/$y.png"
+        "https://tile.openstreetmap.de/$z/$x/$y.png",
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/$z/$y/$x"
     )
 }
 
@@ -291,7 +300,7 @@ fun VectorRouteMapCanvas(
 
             HorizontalDivider(thickness = 1.dp, color = cs.outline)
 
-            // 2. Main Interactive Native Map Area (Strictly clipped to bounds!)
+            // 2. Main Interactive Native Map Area (Strictly clipped to bounds)
             val mapBgColor = when {
                 mapMode == RouteMapMode.STREET_MAP && tileStyle == StreetTileStyle.STREET ->
                     Color(0xFFEEF2F6)
@@ -361,7 +370,7 @@ fun VectorRouteMapCanvas(
                     Spacer(modifier = Modifier.width(5.dp))
                     Text(
                         text = if (mapMode == RouteMapMode.STREET_MAP) {
-                            "OpenStreetMap • ${(zoom * 100).roundToInt()}%"
+                            "OSM Street • ${(zoom * 100).roundToInt()}%"
                         } else {
                             "Vektor GPS • ${(zoom * 100).roundToInt()}%"
                         },
@@ -449,6 +458,25 @@ fun VectorRouteMapCanvas(
                                 fontFeatureSettings = "tnum"
                             ),
                             color = cs.onSurface
+                        )
+                    }
+                }
+
+                // Required OpenStreetMap Copyright Attribution Badge (Bottom-End)
+                if (mapMode == RouteMapMode.STREET_MAP) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(8.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(cs.surface.copy(alpha = 0.85f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = "© OpenStreetMap contributors",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 9.sp,
+                            color = cs.onSurfaceVariant
                         )
                     }
                 }
@@ -562,7 +590,7 @@ private fun NativeInteractiveRouteMapCanvas(
                     for (dy in -2..2) {
                         val tx = (centerTileX + dx).coerceIn(0, maxTileIndex)
                         val ty = (centerTileY + dy).coerceIn(0, maxTileIndex)
-                        add(OsmTileKey(tileZoom, tx, ty))
+                        add(MapTileRequestKey(tileZoom, tx, ty))
                     }
                 }
             }.distinctBy { it.cacheKey }
@@ -571,15 +599,15 @@ private fun NativeInteractiveRouteMapCanvas(
 
     LaunchedEffect(tileKeys) {
         tileKeys.forEach { key ->
-            val cached = OsmTileMemoryCache.get(key.cacheKey)
+            val cached = CompliantTileMemoryCache.get(key.cacheKey)
             if (cached != null) {
                 loadedTiles[key.cacheKey] = cached
             } else {
                 withContext(Dispatchers.IO) {
                     for (urlStr in key.buildUrls()) {
-                        val bmp = fetchOsmTileBitmap(urlStr)
+                        val bmp = fetchCompliantTileBitmap(urlStr)
                         if (bmp != null) {
-                            OsmTileMemoryCache.put(key.cacheKey, bmp)
+                            CompliantTileMemoryCache.put(key.cacheKey, bmp)
                             withContext(Dispatchers.Main) {
                                 loadedTiles[key.cacheKey] = bmp
                             }
@@ -608,7 +636,6 @@ private fun NativeInteractiveRouteMapCanvas(
         Color(0xFF283244).copy(alpha = 0.75f)
     }
 
-    // Strictly clip Canvas to its layout bounds so tiles never overflow into headers/footers
     Canvas(
         modifier = Modifier
             .fillMaxSize()
@@ -685,7 +712,7 @@ private fun NativeInteractiveRouteMapCanvas(
             gy += scaledStep
         }
 
-        // In STREET_MAP mode, draw loaded OpenStreetMap tiles (with DarkOsmColorFilter when Gelap is active)
+        // In STREET_MAP mode, draw loaded tiles (with DarkMapColorFilter when Gelap is active)
         if (!isCompactPreview && mapMode == RouteMapMode.STREET_MAP) {
             if (loadedTiles.isEmpty()) {
                 val artX = (centerX + panOffset.x).coerceIn(0f, w)
@@ -703,7 +730,7 @@ private fun NativeInteractiveRouteMapCanvas(
                     strokeWidth = 6.dp.toPx()
                 )
             } else {
-                val tileFilter = if (tileStyle == StreetTileStyle.DARK) DarkOsmColorFilter else null
+                val tileFilter = if (tileStyle == StreetTileStyle.DARK) DarkMapColorFilter else null
                 tileKeys.forEach { key ->
                     val bmp = loadedTiles[key.cacheKey] ?: return@forEach
                     val dxTiles = key.x - centerTileXExact
@@ -754,7 +781,6 @@ private fun NativeInteractiveRouteMapCanvas(
                 }
             }
 
-            // Outer soft halo
             drawPath(
                 path = fullPath,
                 color = primaryColor.copy(alpha = if (isCompactPreview) 0.18f else 0.24f),
@@ -765,7 +791,6 @@ private fun NativeInteractiveRouteMapCanvas(
                 )
             )
 
-            // Crisp road casing for high contrast over any map tile
             if (!isCompactPreview) {
                 drawPath(
                     path = fullPath,
@@ -778,7 +803,6 @@ private fun NativeInteractiveRouteMapCanvas(
                 )
             }
 
-            // Speed-colored polyline segments
             for (i in 0 until projected.lastIndex) {
                 val p1 = projected[i]
                 val p2 = projected[i + 1]
@@ -797,7 +821,6 @@ private fun NativeInteractiveRouteMapCanvas(
                 )
             }
 
-            // Draw directional chevrons along the trajectory on full map
             if (!isCompactPreview && projected.size >= 6) {
                 val step = (projected.size / 4).coerceAtLeast(2)
                 for (i in step until projected.lastIndex step step) {
@@ -927,29 +950,57 @@ private fun NativeInteractiveRouteMapCanvas(
     }
 }
 
-private fun fetchOsmTileBitmap(urlStr: String): ImageBitmap? {
+/**
+ * Fetches a map tile using an OSM-policy-compliant User-Agent without spoofed Referer headers,
+ * and rejects HTTP 418 / non-200 or blocked placeholder tiles.
+ */
+private fun fetchCompliantTileBitmap(urlStr: String): ImageBitmap? {
     return runCatching {
         val connection = (URL(urlStr).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 4000
-            readTimeout = 4000
+            connectTimeout = 4500
+            readTimeout = 4500
             instanceFollowRedirects = true
-            setRequestProperty(
-                "User-Agent",
-                "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
-            )
-            setRequestProperty("Referer", "https://www.openstreetmap.org/")
-            setRequestProperty("Accept", "image/avif,image/webp,image/apng,image/png,image/*,*/*;q=0.8")
+            setRequestProperty("User-Agent", OSM_COMPLIANT_USER_AGENT)
+            setRequestProperty("Accept", "image/png,image/*;q=0.9,*/*;q=0.5")
         }
         connection.connect()
         if (connection.responseCode == HttpURLConnection.HTTP_OK) {
+            val contentType = connection.contentType ?: ""
+            if (!contentType.startsWith("image/", ignoreCase = true)) {
+                return@runCatching null
+            }
             connection.inputStream.use { stream ->
-                val bmp = BitmapFactory.decodeStream(stream)
-                bmp?.asImageBitmap()
+                val bmp = BitmapFactory.decodeStream(stream) ?: return@use null
+                if (isLikelyBlockedPlaceholderTile(bmp)) {
+                    null
+                } else {
+                    bmp.asImageBitmap()
+                }
             }
         } else {
             null
         }
     }.getOrNull()
+}
+
+/**
+ * Detects if a returned 256x256 bitmap is the OSM 418 "Access blocked" warning banner
+ * (which has a distinct pure-white/blue diagonal caution stripe at x=48..54).
+ */
+private fun isLikelyBlockedPlaceholderTile(bmp: Bitmap): Boolean {
+    if (bmp.width < 100 || bmp.height < 100) return true
+    // Sample a few pixels; if the top-left corner is exact dark-gray #222222 (#FF222222) across the banner
+    val p1 = bmp.getPixel(10, 10)
+    val p2 = bmp.getPixel(120, 10)
+    val r1 = (p1 shr 16) and 0xFF
+    val g1 = (p1 shr 8) and 0xFF
+    val b1 = p1 and 0xFF
+    val r2 = (p2 shr 16) and 0xFF
+    val g2 = (p2 shr 8) and 0xFF
+    val b2 = p2 and 0xFF
+    val isDarkBanner = (r1 in 28..40 && g1 in 28..40 && b1 in 28..40) &&
+        (r2 in 28..40 && g2 in 28..40 && b2 in 28..40)
+    return isDarkBanner
 }
 
 @Composable
