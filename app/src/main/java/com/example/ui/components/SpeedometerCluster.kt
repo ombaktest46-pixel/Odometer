@@ -6,6 +6,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.outlined.GpsFixed
 import androidx.compose.material.icons.outlined.GpsNotFixed
 import androidx.compose.material.icons.outlined.GpsOff
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.PowerSettingsNew
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.TwoWheeler
 import androidx.compose.material3.HorizontalDivider
@@ -506,7 +508,8 @@ fun PermanentOdometerDisplayCard(
 }
 
 /**
- * 2x2 Square Circular Ring Widget Preview (1 - 999.999 Odometer ring progression).
+ * 2x2 Square Circular Ring Widget Preview (1 - 999.999 Odometer ring progression)
+ * with Top-Left O/I Power Rocker Switch and Active/Standby visual indicators.
  */
 @Composable
 fun SquareCircularOdometerWidgetPreview(
@@ -516,12 +519,20 @@ fun SquareCircularOdometerWidgetPreview(
     speedUnit: SpeedUnit,
     widgetTheme: WidgetThemeStyle,
     isMoving: Boolean,
-    sizeDp: Dp = 184.dp,
+    isTrackingActive: Boolean = true,
+    onTogglePowerClick: () -> Unit = {},
+    sizeDp: Dp = 212.dp,
     modifier: Modifier = Modifier
 ) {
     val odoStr = TelemetryFormatter.formatOdometer(totalOdometerKm, speedUnit.multiplier)
     val tripStr = "Trip ${TelemetryFormatter.formatOdometerHighPrecision(tripOdometerKm, speedUnit.multiplier)} ${speedUnit.distanceSymbol}"
-    val ringColor = Color(widgetTheme.ringColorHex)
+    val ringColor = if (isTrackingActive) {
+        Color(widgetTheme.ringColorHex)
+    } else {
+        Color.White.copy(alpha = 0.45f)
+    }
+    val activeGreen = Color(0xFF20B978)
+    val activeGreenBright = Color(0xFF4ADE80)
 
     val targetOdoProgress = TelemetryFormatter.calculateOdometerRingProgress(
         km = totalOdometerKm,
@@ -537,8 +548,11 @@ fun SquareCircularOdometerWidgetPreview(
         contentAlignment = Alignment.Center,
         modifier = modifier
             .size(sizeDp)
-            .shadow(elevation = 6.dp, shape = RoundedCornerShape(32.dp))
-            .clip(RoundedCornerShape(32.dp))
+            .shadow(
+                elevation = if (isTrackingActive) 8.dp else 3.dp,
+                shape = RoundedCornerShape(34.dp)
+            )
+            .clip(RoundedCornerShape(34.dp))
             .background(
                 Brush.linearGradient(
                     colors = listOf(
@@ -547,121 +561,282 @@ fun SquareCircularOdometerWidgetPreview(
                     )
                 )
             )
-            .padding(14.dp)
+            .border(
+                width = if (isTrackingActive) 2.2.dp else 1.dp,
+                color = if (isTrackingActive) activeGreen else Color.White.copy(alpha = 0.22f),
+                shape = RoundedCornerShape(34.dp)
+            )
+            .clickable { onTogglePowerClick() }
+            .testTag("widget_odo_interactive_card")
     ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val strokePx = 9.dp.toPx()
-            val inset = strokePx / 2f + 4.dp.toPx()
-            val arcDiameter = size.minDimension - inset * 2f
-            val topLeft = Offset(inset, inset)
-            val arcSize = Size(arcDiameter, arcDiameter)
-
-            drawArc(
-                color = Color.White.copy(alpha = 0.22f),
-                startAngle = 0f,
-                sweepAngle = 360f,
-                useCenter = false,
-                topLeft = topLeft,
-                size = arcSize,
-                style = Stroke(width = strokePx, cap = StrokeCap.Round)
-            )
-
-            if (animatedOdoProgress > 0.001f) {
-                drawArc(
-                    color = ringColor,
-                    startAngle = -90f,
-                    sweepAngle = 360f * animatedOdoProgress,
-                    useCenter = false,
-                    topLeft = topLeft,
-                    size = arcSize,
-                    style = Stroke(width = strokePx, cap = StrokeCap.Round)
-                )
-            } else {
-                val topCenter = Offset(size.width / 2f, inset)
-                drawCircle(
-                    color = ringColor.copy(alpha = 0.7f),
-                    radius = strokePx / 2f,
-                    center = topCenter
-                )
-            }
-        }
-
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 14.dp, vertical = 12.dp)
-        ) {
-            Text(
-                text = bikeName,
-                style = MaterialTheme.typography.labelMedium,
-                color = Color.White.copy(alpha = 0.92f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            Spacer(modifier = Modifier.height(2.dp))
-
-            Text(
-                text = odoStr,
-                style = TextStyle(
-                    fontFamily = InterFontFamily,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = when {
-                        odoStr.length >= 9 -> 20.sp
-                        odoStr.length >= 7 -> 24.sp
-                        else -> 27.sp
-                    },
-                    fontFeatureSettings = "tnum"
-                ),
-                color = Color.White,
-                maxLines = 1
-            )
-
-            Text(
-                text = "ODO / 999.999 ${speedUnit.distanceSymbol.uppercase()}",
-                style = MaterialTheme.typography.labelSmall,
-                fontSize = 8.sp,
-                color = Color.White.copy(alpha = 0.8f)
-            )
-
-            Spacer(modifier = Modifier.height(5.dp))
-
+        // Standby dim overlay when Auto Tracking is OFF so ON vs OFF is immediately obvious
+        if (!isTrackingActive) {
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(50))
-                    .background(Color.White.copy(alpha = 0.18f))
-                    .padding(horizontal = 9.dp, vertical = 2.dp)
-            ) {
-                Text(
-                    text = tripStr,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontSize = 9.5.sp,
-                    color = Color.White,
-                    maxLines = 1
-                )
-            }
+                    .fillMaxSize()
+                    .background(Color(0xFF0A0C12).copy(alpha = 0.34f))
+            )
+        }
 
-            Spacer(modifier = Modifier.height(5.dp))
-
+        // 1. TOP BAR: Top-Left O/I Power Rocker Switch + Top-Right Status Pill
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.TopCenter)
+                .padding(horizontal = 12.dp, vertical = 11.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Top-Left Saklar O/I & Power Button
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(Color(0xFF0F131A).copy(alpha = 0.62f))
+                    .border(
+                        width = 1.dp,
+                        color = if (isTrackingActive) activeGreen else Color.White.copy(alpha = 0.38f),
+                        shape = RoundedCornerShape(50)
+                    )
+                    .clickable { onTogglePowerClick() }
+                    .padding(3.dp)
+                    .testTag("widget_power_switch_oi")
+            ) {
+                // 'O' (OFF) Side
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(
+                            if (!isTrackingActive) Color(0xFF737B88).copy(alpha = 0.65f)
+                            else Color.Transparent
+                        )
+                        .padding(horizontal = 7.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = "O",
+                        style = TextStyle(
+                            fontFamily = InterFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 10.sp
+                        ),
+                        color = if (!isTrackingActive) Color.White else Color.White.copy(alpha = 0.45f)
+                    )
+                }
+
+                // 'I' (ON) + Power Icon Side
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(
+                            if (isTrackingActive) Color(0xFF16A36A)
+                            else Color.Transparent
+                        )
+                        .padding(horizontal = 7.dp, vertical = 2.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.PowerSettingsNew,
+                        contentDescription = "Saklar Daya Auto Tracking",
+                        tint = if (isTrackingActive) Color.White else Color.White.copy(alpha = 0.5f),
+                        modifier = Modifier.size(11.dp)
+                    )
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Text(
+                        text = "I",
+                        style = TextStyle(
+                            fontFamily = InterFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 10.sp
+                        ),
+                        color = if (isTrackingActive) Color.White else Color.White.copy(alpha = 0.5f)
+                    )
+                }
+            }
+
+            // Top-Right Status Indicator Badge (NYALA / JALAN / MATI)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(
+                        if (isTrackingActive) Color(0xFF102A20).copy(alpha = 0.72f)
+                        else Color(0xFF0F131A).copy(alpha = 0.55f)
+                    )
+                    .border(
+                        width = 1.dp,
+                        color = if (isTrackingActive) activeGreen else Color.White.copy(alpha = 0.28f),
+                        shape = RoundedCornerShape(50)
+                    )
+                    .padding(horizontal = 8.dp, vertical = 3.dp)
             ) {
                 Box(
                     modifier = Modifier
                         .size(6.dp)
                         .clip(CircleShape)
-                        .background(if (isMoving) Color(0xFF20B978) else Color.White.copy(alpha = 0.7f))
+                        .background(if (isTrackingActive) activeGreenBright else Color.White.copy(alpha = 0.45f))
                 )
-                Spacer(modifier = Modifier.width(5.dp))
-                Icon(
-                    imageVector = Icons.Outlined.TwoWheeler,
-                    contentDescription = "Motor",
-                    tint = Color.White,
-                    modifier = Modifier.size(18.dp)
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = when {
+                        isMoving -> "JALAN"
+                        isTrackingActive -> "NYALA"
+                        else -> "MATI"
+                    },
+                    style = TextStyle(
+                        fontFamily = InterFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 8.5.sp
+                    ),
+                    color = if (isTrackingActive) activeGreenBright else Color.White.copy(alpha = 0.65f)
                 )
+            }
+        }
+
+        // 2. Circular Odometer Progress Ring (1 - 999.999 KM) shifted slightly below top switch bar
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = 26.dp, start = 16.dp, end = 16.dp, bottom = 10.dp)
+        ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val strokePx = 8.5.dp.toPx()
+                val inset = strokePx / 2f + 2.dp.toPx()
+                val arcDiameter = size.minDimension - inset * 2f
+                val topLeft = Offset(
+                    (size.width - arcDiameter) / 2f,
+                    (size.height - arcDiameter) / 2f
+                )
+                val arcSize = Size(arcDiameter, arcDiameter)
+
+                drawArc(
+                    color = Color.White.copy(alpha = if (isTrackingActive) 0.24f else 0.13f),
+                    startAngle = 0f,
+                    sweepAngle = 360f,
+                    useCenter = false,
+                    topLeft = topLeft,
+                    size = arcSize,
+                    style = Stroke(width = strokePx, cap = StrokeCap.Round)
+                )
+
+                if (animatedOdoProgress > 0.001f) {
+                    drawArc(
+                        color = ringColor,
+                        startAngle = -90f,
+                        sweepAngle = 360f * animatedOdoProgress,
+                        useCenter = false,
+                        topLeft = topLeft,
+                        size = arcSize,
+                        style = Stroke(width = strokePx, cap = StrokeCap.Round)
+                    )
+                } else {
+                    val topCenter = Offset(size.width / 2f, topLeft.y)
+                    drawCircle(
+                        color = ringColor.copy(alpha = if (isTrackingActive) 0.85f else 0.45f),
+                        radius = strokePx / 2f,
+                        center = topCenter
+                    )
+                }
+            }
+
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 14.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    text = bikeName,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontSize = 11.sp,
+                    color = Color.White.copy(alpha = if (isTrackingActive) 0.94f else 0.65f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Text(
+                    text = odoStr,
+                    style = TextStyle(
+                        fontFamily = InterFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = when {
+                            odoStr.length >= 9 -> 18.sp
+                            odoStr.length >= 7 -> 21.sp
+                            else -> 24.sp
+                        },
+                        fontFeatureSettings = "tnum"
+                    ),
+                    color = Color.White.copy(alpha = if (isTrackingActive) 1f else 0.78f),
+                    maxLines = 1
+                )
+
+                Text(
+                    text = "ODO / 999.999 ${speedUnit.distanceSymbol.uppercase()}",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontSize = 7.5.sp,
+                    color = Color.White.copy(alpha = if (isTrackingActive) 0.82f else 0.55f)
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(Color.White.copy(alpha = if (isTrackingActive) 0.22f else 0.12f))
+                        .border(
+                            width = if (isTrackingActive) 1.dp else 0.dp,
+                            color = if (isTrackingActive) activeGreen.copy(alpha = 0.55f) else Color.Transparent,
+                            shape = RoundedCornerShape(50)
+                        )
+                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = tripStr,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = 9.sp,
+                        color = Color.White.copy(alpha = if (isTrackingActive) 1f else 0.75f),
+                        maxLines = 1
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(
+                                when {
+                                    isMoving -> activeGreenBright
+                                    isTrackingActive -> activeGreen
+                                    else -> Color.White.copy(alpha = 0.45f)
+                                }
+                            )
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                        imageVector = Icons.Outlined.TwoWheeler,
+                        contentDescription = "Motor",
+                        tint = Color.White.copy(alpha = if (isTrackingActive) 0.95f else 0.55f),
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = if (isTrackingActive) "ON" else "OFF",
+                        style = TextStyle(
+                            fontFamily = InterFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 8.sp
+                        ),
+                        color = if (isTrackingActive) activeGreenBright else Color.White.copy(alpha = 0.55f)
+                    )
+                }
             }
         }
     }

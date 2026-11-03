@@ -102,6 +102,7 @@ class MotoOdoViewModel(
         viewModelScope.launch {
             odometerPreferences.setAutoTrackingEnabled(true)
             AutoTrackingService.startService(context, AutoTrackingService.ACTION_START_AUTO_TRACKING)
+            com.example.widget.MotoOdoWidgetProvider.updateAllWidgets(context)
             showMessage("Auto Tracking aktif • Memantau pergerakan GPS motor otomatis")
         }
     }

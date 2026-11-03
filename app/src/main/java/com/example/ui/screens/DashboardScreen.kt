@@ -466,8 +466,16 @@ fun DashboardScreen(
                 }
             }
 
-            // 7. COMPACT WIDGET CARD (Preserves 2x2 Home Screen Widget & Customization)
+            // 7. COMPACT WIDGET CARD (Interactive 2x2 Widget with Top-Left O/I Power Switch)
             item {
+                val toggleWidgetTracking: () -> Unit = {
+                    if (isTrackingActive) {
+                        onStopAutoTracking()
+                    } else {
+                        onRequestPermissionsAndStart()
+                    }
+                }
+
                 MotoCard(contentPadding = PaddingValues(18.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -482,7 +490,7 @@ fun DashboardScreen(
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "Menampilkan ${settingsState.bikeName}, Odometer (1–999.999) & Trip KM",
+                                text = "Tekan saklar O/I di pojok kiri atas widget untuk menghidupkan/mematikan Auto Track",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontSize = 12.sp,
                                 color = cs.onSurfaceVariant
@@ -497,7 +505,26 @@ fun DashboardScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        SquareCircularOdometerWidgetPreview(
+                            bikeName = settingsState.bikeName,
+                            totalOdometerKm = telemetryState.totalOdometerKm,
+                            tripOdometerKm = telemetryState.tripOdometerKm,
+                            speedUnit = speedUnit,
+                            widgetTheme = settingsState.widgetTheme,
+                            isMoving = telemetryState.motionStatus == MotionStatus.MOVING && isTrackingActive,
+                            isTrackingActive = isTrackingActive,
+                            onTogglePowerClick = toggleWidgetTracking,
+                            sizeDp = 196.dp
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -614,7 +641,7 @@ fun DashboardScreen(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Cincin melingkar mengikuti angka odometer (1 – 999.999 ${speedUnit.distanceSymbol.uppercase()})",
+                            text = "Tekan saklar O/I di pojok kiri atas untuk menyalakan/mematikan Auto Track",
                             style = MaterialTheme.typography.bodyMedium,
                             color = cs.onSurfaceVariant
                         )
@@ -628,7 +655,15 @@ fun DashboardScreen(
                             speedUnit = speedUnit,
                             widgetTheme = settingsState.widgetTheme,
                             isMoving = telemetryState.motionStatus == MotionStatus.MOVING && isTrackingActive,
-                            sizeDp = 212.dp
+                            isTrackingActive = isTrackingActive,
+                            onTogglePowerClick = {
+                                if (isTrackingActive) {
+                                    onStopAutoTracking()
+                                } else {
+                                    onRequestPermissionsAndStart()
+                                }
+                            },
+                            sizeDp = 216.dp
                         )
 
                         Spacer(modifier = Modifier.height(28.dp))

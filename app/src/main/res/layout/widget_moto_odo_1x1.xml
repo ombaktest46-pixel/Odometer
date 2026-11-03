@@ -12,4 +12,11 @@
         android:contentDescription="@string/app_name"
         android:scaleType="fitCenter" />
 
+    <FrameLayout
+        android:id="@+id/widget_power_toggle_btn"
+        android:layout_width="96dp"
+        android:layout_height="52dp"
+        android:layout_gravity="top|start"
+        android:contentDescription="Saklar Daya Auto Tracking O/I" />
+
 </FrameLayout>
