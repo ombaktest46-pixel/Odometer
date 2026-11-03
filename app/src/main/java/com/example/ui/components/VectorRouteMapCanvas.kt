@@ -46,10 +46,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
@@ -96,7 +97,22 @@ enum class StreetTileStyle(val label: String) {
     STREET("Terang")
 }
 
-private object MapTileMemoryCache {
+/**
+ * Dark-mode color matrix applied to standard OpenStreetMap street tiles
+ * so dark mode gets crisp, watermark-free dark street maps without requiring any external API key.
+ */
+private val DarkOsmColorFilter = ColorFilter.colorMatrix(
+    ColorMatrix(
+        floatArrayOf(
+            -0.78f, 0.0f, 0.0f, 0f, 212f,
+            0.0f, -0.76f, 0.0f, 0f, 218f,
+            0.0f, 0.0f, -0.70f, 0f, 230f,
+            0.0f, 0.0f, 0.0f, 1f, 0f
+        )
+    )
+)
+
+private object OsmTileMemoryCache {
     private val cache = object : LruCache<String, ImageBitmap>(96) {}
 
     fun get(key: String): ImageBitmap? = synchronized(cache) { cache.get(key) }
@@ -104,27 +120,18 @@ private object MapTileMemoryCache {
     fun put(key: String, bitmap: ImageBitmap) = synchronized(cache) { cache.put(key, bitmap) }
 }
 
-private data class SlippyTileKey(
-    val style: StreetTileStyle,
+private data class OsmTileKey(
     val z: Int,
     val x: Int,
     val y: Int
 ) {
-    val cacheKey: String get() = "${style.name}/$z/$x/$y"
+    val cacheKey: String get() = "osm_v2/$z/$x/$y"
 
-    fun buildUrls(): List<String> {
-        return when (style) {
-            StreetTileStyle.DARK -> listOf(
-                "https://a.basemaps.cartocdn.com/dark_all/$z/$x/$y.png",
-                "https://b.basemaps.cartocdn.com/dark_all/$z/$x/$y.png",
-                "https://tile.openstreetmap.org/$z/$x/$y.png"
-            )
-            StreetTileStyle.STREET -> listOf(
-                "https://tile.openstreetmap.org/$z/$x/$y.png",
-                "https://a.basemaps.cartocdn.com/rastertiles/voyager/$z/$x/$y.png"
-            )
-        }
-    }
+    fun buildUrls(): List<String> = listOf(
+        "https://tile.openstreetmap.org/$z/$x/$y.png",
+        "https://a.tile.openstreetmap.fr/hot/$z/$x/$y.png",
+        "https://b.tile.openstreetmap.fr/hot/$z/$x/$y.png"
+    )
 }
 
 private fun lonToTileX(lon: Double, z: Int): Double {
@@ -169,24 +176,23 @@ fun VectorRouteMapCanvas(
     var panOffset by remember { mutableStateOf(Offset.Zero) }
     var selectedPointIndex by remember(routePoints) { mutableIntStateOf(-1) }
 
-    // Use contentPadding = PaddingValues(0.dp) so the map fills the MotoCard edge-to-edge cleanly
     MotoCard(
         modifier = modifier.fillMaxWidth(),
         contentPadding = PaddingValues(0.dp)
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            // 1. Top Map Header + Mode Switcher (Responsive, no overflow)
+            // 1. Top Map Header + Mode Switcher
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(cs.surfaceVariant.copy(alpha = 0.55f))
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f, fill = false)
+                    modifier = Modifier.weight(1f)
                 ) {
                     Icon(
                         imageVector = if (mapMode == RouteMapMode.STREET_MAP) Icons.Outlined.Map else Icons.Outlined.Explore,
@@ -196,19 +202,29 @@ fun VectorRouteMapCanvas(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "Peta Rute (${routePoints.size} Titik)",
+                        text = "Peta Rute",
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold,
                         color = cs.onSurface,
+                        maxLines = 1
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "• ${routePoints.size} titik",
+                        style = TextStyle(
+                            fontFamily = InterFontFamily,
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 11.sp,
+                            fontFeatureSettings = "tnum"
+                        ),
+                        color = cs.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
 
-                Spacer(modifier = Modifier.width(8.dp))
-
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (mapMode == RouteMapMode.STREET_MAP) {
@@ -232,7 +248,7 @@ fun VectorRouteMapCanvas(
                                     imageVector = Icons.Outlined.Layers,
                                     contentDescription = "Ganti Tema Peta",
                                     tint = cs.secondary,
-                                    modifier = Modifier.size(13.dp)
+                                    modifier = Modifier.size(12.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
@@ -258,7 +274,7 @@ fun VectorRouteMapCanvas(
                                     RoundedCornerShape(8.dp)
                                 )
                                 .clickable { mapMode = mode }
-                                .padding(horizontal = 9.dp, vertical = 5.dp)
+                                .padding(horizontal = 8.dp, vertical = 5.dp)
                                 .testTag("btn_map_mode_${mode.name}")
                         ) {
                             Text(
@@ -275,7 +291,7 @@ fun VectorRouteMapCanvas(
 
             HorizontalDivider(thickness = 1.dp, color = cs.outline)
 
-            // 2. Main Interactive Native Map Area (100% Compose Canvas — Zero WebView glitches)
+            // 2. Main Interactive Native Map Area (Strictly clipped to bounds!)
             val mapBgColor = when {
                 mapMode == RouteMapMode.STREET_MAP && tileStyle == StreetTileStyle.STREET ->
                     Color(0xFFEEF2F6)
@@ -289,6 +305,7 @@ fun VectorRouteMapCanvas(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(mapHeight)
+                    .clipToBounds()
                     .background(mapBgColor)
                     .pointerInput(Unit) {
                         detectTransformGestures { _, pan, gestureZoom, _ ->
@@ -302,9 +319,8 @@ fun VectorRouteMapCanvas(
                             onDoubleTap = {
                                 zoom = (zoom * 1.4f).coerceIn(0.75f, 6.0f)
                             },
-                            onTap = { tapOffset ->
+                            onTap = {
                                 if (routePoints.isNotEmpty()) {
-                                    // Cycle or clear selected telemetry waypoint
                                     selectedPointIndex = if (selectedPointIndex == -1) {
                                         routePoints.size / 2
                                     } else {
@@ -325,14 +341,14 @@ fun VectorRouteMapCanvas(
                     selectedPointIndex = selectedPointIndex
                 )
 
-                // Top-Left Compass & Active Mode Pill
+                // Top-Left Status & Zoom Badge
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .padding(10.dp)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(cs.surface.copy(alpha = 0.90f))
+                        .background(cs.surface.copy(alpha = 0.92f))
                         .border(1.dp, cs.outline, RoundedCornerShape(8.dp))
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                 ) {
@@ -345,9 +361,9 @@ fun VectorRouteMapCanvas(
                     Spacer(modifier = Modifier.width(5.dp))
                     Text(
                         text = if (mapMode == RouteMapMode.STREET_MAP) {
-                            "GPS Street Grid • ${(zoom * 100).roundToInt()}%"
+                            "OpenStreetMap • ${(zoom * 100).roundToInt()}%"
                         } else {
-                            "Vektor Telemetri • ${(zoom * 100).roundToInt()}%"
+                            "Vektor GPS • ${(zoom * 100).roundToInt()}%"
                         },
                         style = TextStyle(
                             fontFamily = InterFontFamily,
@@ -418,7 +434,7 @@ fun VectorRouteMapCanvas(
                             .align(Alignment.BottomStart)
                             .padding(10.dp)
                             .clip(RoundedCornerShape(8.dp))
-                            .background(cs.surface.copy(alpha = 0.90f))
+                            .background(cs.surface.copy(alpha = 0.92f))
                             .border(1.dp, cs.outline, RoundedCornerShape(8.dp))
                             .padding(horizontal = 8.dp, vertical = 4.dp)
                     ) {
@@ -440,7 +456,7 @@ fun VectorRouteMapCanvas(
 
             HorizontalDivider(thickness = 1.dp, color = cs.outline)
 
-            // 3. Map Legend & Start/Finish Coordinates (Clean 2-column layout without collision)
+            // 3. Map Legend & Start/Finish Coordinates
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -479,6 +495,7 @@ fun MiniRoutePreviewCanvas(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(10.dp))
+            .clipToBounds()
             .background(previewBg)
             .border(1.dp, cs.outline, RoundedCornerShape(10.dp))
     ) {
@@ -509,14 +526,11 @@ private fun NativeInteractiveRouteMapCanvas(
     val secondaryColor = cs.secondary
     val errorColor = cs.error
 
-    // Calculate bounding box of the route (or default Jakarta/Surabaya center if empty)
     val minLat = remember(routePoints) { routePoints.minOfOrNull { it.lat } ?: -6.2000 }
     val maxLat = remember(routePoints) { routePoints.maxOfOrNull { it.lat } ?: -6.1950 }
     val minLng = remember(routePoints) { routePoints.minOfOrNull { it.lng } ?: 106.8160 }
     val maxLng = remember(routePoints) { routePoints.maxOfOrNull { it.lng } ?: 106.8220 }
 
-    val centerLat = (minLat + maxLat) / 2.0
-    val centerLng = (minLng + maxLng) / 2.0
     val rawLatSpan = max(maxLat - minLat, 0.0012)
     val rawLngSpan = max(maxLng - minLng, 0.0012)
 
@@ -534,12 +548,11 @@ private fun NativeInteractiveRouteMapCanvas(
     val spanTileX = max(maxTileX - minTileX, 0.18)
     val spanTileY = max(maxTileY - minTileY, 0.18)
 
-    // Determine visible slippy tiles around the route center for STREET_MAP mode
     val loadedTiles = remember { mutableStateMapOf<String, ImageBitmap>() }
     val centerTileX = floor(centerTileXExact).toInt()
     val centerTileY = floor(centerTileYExact).toInt()
 
-    val tileKeys = remember(mapMode, tileStyle, tileZoom, centerTileX, centerTileY, isCompactPreview) {
+    val tileKeys = remember(mapMode, tileZoom, centerTileX, centerTileY, isCompactPreview) {
         if (isCompactPreview || mapMode != RouteMapMode.STREET_MAP) {
             emptyList()
         } else {
@@ -549,7 +562,7 @@ private fun NativeInteractiveRouteMapCanvas(
                     for (dy in -2..2) {
                         val tx = (centerTileX + dx).coerceIn(0, maxTileIndex)
                         val ty = (centerTileY + dy).coerceIn(0, maxTileIndex)
-                        add(SlippyTileKey(tileStyle, tileZoom, tx, ty))
+                        add(OsmTileKey(tileZoom, tx, ty))
                     }
                 }
             }.distinctBy { it.cacheKey }
@@ -558,15 +571,15 @@ private fun NativeInteractiveRouteMapCanvas(
 
     LaunchedEffect(tileKeys) {
         tileKeys.forEach { key ->
-            val cached = MapTileMemoryCache.get(key.cacheKey)
+            val cached = OsmTileMemoryCache.get(key.cacheKey)
             if (cached != null) {
                 loadedTiles[key.cacheKey] = cached
             } else {
                 withContext(Dispatchers.IO) {
                     for (urlStr in key.buildUrls()) {
-                        val bmp = fetchTileBitmap(urlStr)
+                        val bmp = fetchOsmTileBitmap(urlStr)
                         if (bmp != null) {
-                            MapTileMemoryCache.put(key.cacheKey, bmp)
+                            OsmTileMemoryCache.put(key.cacheKey, bmp)
                             withContext(Dispatchers.Main) {
                                 loadedTiles[key.cacheKey] = bmp
                             }
@@ -595,7 +608,12 @@ private fun NativeInteractiveRouteMapCanvas(
         Color(0xFF283244).copy(alpha = 0.75f)
     }
 
-    Canvas(modifier = Modifier.fillMaxSize()) {
+    // Strictly clip Canvas to its layout bounds so tiles never overflow into headers/footers
+    Canvas(
+        modifier = Modifier
+            .fillMaxSize()
+            .clipToBounds()
+    ) {
         val w = size.width
         val h = size.height
         val centerX = w / 2f
@@ -605,14 +623,13 @@ private fun NativeInteractiveRouteMapCanvas(
         val usableW = (w - paddingPx * 2f).coerceAtLeast(12f)
         val usableH = (h - paddingPx * 2f).coerceAtLeast(12f)
 
-        // Unified Web Mercator scale so both slippy tiles and GPS route points align 100%
         val baseTileSizePx = min(
             usableW / spanTileX.toFloat(),
             usableH / spanTileY.toFloat()
         ).coerceIn(120f, 1200f)
         val effectiveTileSizePx = baseTileSizePx * zoom
 
-        // 1. Base Cartographic Street Grid / Radar Layer (Always visible immediately)
+        // 1. Base Cartographic Street Grid / Radar Layer
         val baseStep = if (isCompactPreview) 16.dp.toPx() else 36.dp.toPx()
         val scaledStep = (baseStep * zoom).coerceIn(14.dp.toPx(), 110.dp.toPx())
         val offsetX = ((panOffset.x % scaledStep) + scaledStep) % scaledStep
@@ -668,7 +685,7 @@ private fun NativeInteractiveRouteMapCanvas(
             gy += scaledStep
         }
 
-        // In STREET_MAP mode, draw subtle arterial road bands + any loaded OSM/Carto slippy tiles
+        // In STREET_MAP mode, draw loaded OpenStreetMap tiles (with DarkOsmColorFilter when Gelap is active)
         if (!isCompactPreview && mapMode == RouteMapMode.STREET_MAP) {
             if (loadedTiles.isEmpty()) {
                 val artX = (centerX + panOffset.x).coerceIn(0f, w)
@@ -686,6 +703,7 @@ private fun NativeInteractiveRouteMapCanvas(
                     strokeWidth = 6.dp.toPx()
                 )
             } else {
+                val tileFilter = if (tileStyle == StreetTileStyle.DARK) DarkOsmColorFilter else null
                 tileKeys.forEach { key ->
                     val bmp = loadedTiles[key.cacheKey] ?: return@forEach
                     val dxTiles = key.x - centerTileXExact
@@ -703,7 +721,8 @@ private fun NativeInteractiveRouteMapCanvas(
                                 effectiveTileSizePx.roundToInt() + 1,
                                 effectiveTileSizePx.roundToInt() + 1
                             ),
-                            alpha = 0.94f
+                            alpha = 0.95f,
+                            colorFilter = tileFilter
                         )
                     }
                 }
@@ -822,7 +841,6 @@ private fun NativeInteractiveRouteMapCanvas(
         val firstPt = projected.first()
         val pinRadius = if (isCompactPreview) 3.5.dp.toPx() else 6.5.dp.toPx()
 
-        // Start Pin
         drawCircle(
             color = primaryColor.copy(alpha = 0.28f),
             radius = pinRadius * 2.1f,
@@ -839,7 +857,6 @@ private fun NativeInteractiveRouteMapCanvas(
             center = firstPt
         )
 
-        // End Pin
         val lastPt = projected.last()
         drawCircle(
             color = errorColor.copy(alpha = 0.28f),
@@ -857,7 +874,6 @@ private fun NativeInteractiveRouteMapCanvas(
             center = lastPt
         )
 
-        // Highlighted selected point if user tapped the map
         if (!isCompactPreview && selectedPointIndex in projected.indices) {
             val selPt = projected[selectedPointIndex]
             drawCircle(
@@ -911,13 +927,18 @@ private fun NativeInteractiveRouteMapCanvas(
     }
 }
 
-private fun fetchTileBitmap(urlStr: String): ImageBitmap? {
+private fun fetchOsmTileBitmap(urlStr: String): ImageBitmap? {
     return runCatching {
         val connection = (URL(urlStr).openConnection() as HttpURLConnection).apply {
             connectTimeout = 4000
             readTimeout = 4000
             instanceFollowRedirects = true
-            setRequestProperty("User-Agent", "MotoOdoAndroid/1.0 (GPS Odometer)")
+            setRequestProperty(
+                "User-Agent",
+                "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+            )
+            setRequestProperty("Referer", "https://www.openstreetmap.org/")
+            setRequestProperty("Accept", "image/avif,image/webp,image/apng,image/png,image/*,*/*;q=0.8")
         }
         connection.connect()
         if (connection.responseCode == HttpURLConnection.HTTP_OK) {
