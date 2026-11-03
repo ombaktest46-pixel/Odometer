@@ -1,0 +1,6 @@
+{
+  "summary": "Rencana implementasi lengkap untuk aplikasi MOTO ODO – Automatic GPS Odometer mencakup sistem Auto Tracking GPS otomatis tanpa tombol START, Foreground Location Service & notifikasi live permanen, Total Odometer permanen & Trip Odometer, Live Speedometer, Riwayat Perjalanan dengan kanvas rute vektor interaktif, Statistik grafik harian & bulanan, Pengaturan lengkap termasuk kalibrasi & ekspor/impor JSON, serta mode simulasi berkendara untuk pengujian.",
+  "updatedAt": "2026-11-02T20:56:52.662912275Z",
+  "requestFeedback": true,
+  "userFacing": true
+}

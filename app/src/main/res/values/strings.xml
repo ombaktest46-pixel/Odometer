@@ -1,0 +1,22 @@
+<resources>
+    <string name="app_name">MOTO ODO</string>
+    <string name="app_subtitle">AUTOMATIC GPS ODOMETER</string>
+    <string name="nav_dashboard">Dashboard</string>
+    <string name="nav_history">Riwayat</string>
+    <string name="nav_statistics">Statistik</string>
+    <string name="nav_settings">Pengaturan</string>
+    <string name="btn_enable_auto_tracking">AKTIFKAN AUTO TRACKING</string>
+    <string name="btn_disable_auto_tracking">MATIKAN AUTO TRACKING</string>
+    <string name="btn_reset_trip">RESET TRIP</string>
+    <string name="btn_trip_history">RIWAYAT PERJALANAN</string>
+    <string name="label_total_odometer">TOTAL ODOMETER PERMANEN</string>
+    <string name="label_trip_odometer">TRIP ODOMETER</string>
+    <string name="status_moving">MOTOR BERJALAN</string>
+    <string name="status_stopped">MOTOR BERHENTI</string>
+    <string name="status_searching_gps">MENCARI SINYAL GPS</string>
+    <string name="status_tracking_off">AUTO TRACKING NONAKTIF</string>
+    <string name="notif_channel_name">MOTO ODO Live Tracking</string>
+    <string name="notif_channel_desc">Notifikasi permanen odometer dan speedometer real-time saat Auto Tracking aktif</string>
+    <string name="notif_action_open">Buka Aplikasi</string>
+    <string name="notif_action_stop">Hentikan Auto Tracking</string>
+</resources>

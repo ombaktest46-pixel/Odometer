@@ -1,0 +1,6 @@
+{
+  "name": "MOTO ODO",
+  "description": "Automatic GPS Odometer & Digital Speedometer for Motorcycles with Permanent Total Odometer, Live Background Notification, Trip History & Vector Route Map.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
