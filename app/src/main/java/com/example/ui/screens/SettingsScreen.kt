@@ -786,25 +786,26 @@ private fun SettingsGroupCard(
     content: @Composable () -> Unit
 ) {
     val cs = MaterialTheme.colorScheme
-    MotoCard(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(18.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = sectionTitle,
-                    tint = cs.onSurface,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = sectionTitle,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = cs.onSurface
-                )
-            }
-            Spacer(modifier = Modifier.height(14.dp))
-            content()
+    MotoCard(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(18.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = icon,
+                contentDescription = sectionTitle,
+                tint = cs.onSurface,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = sectionTitle,
+                style = MaterialTheme.typography.titleMedium,
+                color = cs.onSurface
+            )
         }
+        Spacer(modifier = Modifier.height(14.dp))
+        content()
     }
 }
 

@@ -138,6 +138,8 @@ fun HistoryScreen(
                     )
                 }
 
+                Spacer(modifier = Modifier.width(8.dp))
+
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
@@ -194,11 +196,11 @@ fun HistoryScreen(
             Spacer(modifier = Modifier.height(12.dp))
 
             // 2. Small Informational Card for Permanent Odometer Protection
-            MotoCard(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+            MotoCard(
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
@@ -243,13 +245,14 @@ fun HistoryScreen(
 
                 if (trips.isEmpty()) {
                     item {
-                        MotoCard(modifier = Modifier.fillMaxWidth()) {
+                        MotoCard(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 32.dp)
+                        ) {
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.Center,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 28.dp, vertical = 36.dp)
+                                modifier = Modifier.fillMaxWidth()
                             ) {
                                 Box(
                                     contentAlignment = Alignment.Center,
@@ -350,120 +353,119 @@ private fun TripHistoryItemCard(
 
     MotoCard(
         onClick = onClick,
+        contentPadding = PaddingValues(16.dp),
         modifier = Modifier
             .fillMaxWidth()
             .testTag("trip_item_card_${trip.id}")
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            // Top Row: Route Preview, Date + Start/End Time, Distance
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                MiniRoutePreviewCanvas(
-                    routePoints = routePoints,
-                    modifier = Modifier.size(width = 64.dp, height = 50.dp)
+        // Top Row: Route Preview, Date + Start/End Time, Distance
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            MiniRoutePreviewCanvas(
+                routePoints = routePoints,
+                modifier = Modifier.size(width = 64.dp, height = 50.dp)
+            )
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = dateStr,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = cs.onSurface
                 )
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = dateStr,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = cs.onSurface
-                    )
-                    Spacer(modifier = Modifier.height(3.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Outlined.Schedule,
-                            contentDescription = "Waktu Mulai dan Selesai",
-                            tint = cs.secondary,
-                            modifier = Modifier.size(13.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "$startTimeStr – $endTimeStr",
-                            style = TextStyle(
-                                fontFamily = InterFontFamily,
-                                fontWeight = FontWeight.Medium,
-                                fontSize = 12.sp,
-                                fontFeatureSettings = "tnum"
-                            ),
-                            color = cs.secondary
-                        )
-                    }
-                }
-
-                // Distance value
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(
-                        text = TelemetryFormatter.formatOdometerHighPrecision(trip.distanceKm, speedUnit.multiplier),
-                        style = TextStyle(
-                            fontFamily = InterFontFamily,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 22.sp,
-                            fontFeatureSettings = "tnum"
-                        ),
-                        color = cs.onSurface
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = speedUnit.distanceSymbol,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = cs.secondary,
-                        modifier = Modifier.padding(bottom = 3.dp)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-            HorizontalDivider(thickness = 1.dp, color = cs.outline)
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Bottom Row: Duration, Average Speed, Maximum Speed
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TripSubMetric(
-                    label = "Durasi",
-                    value = TelemetryFormatter.formatDurationReadable(trip.durationSeconds)
-                )
-                TripSubMetric(
-                    label = "Rata-rata",
-                    value = "${TelemetryFormatter.formatSpeedOneDecimal(trip.avgSpeedKmh, speedUnit.multiplier)} ${speedUnit.symbol}"
-                )
-                TripSubMetric(
-                    label = "Maksimal",
-                    value = "${TelemetryFormatter.formatSpeedOneDecimal(trip.maxSpeedKmh, speedUnit.multiplier)} ${speedUnit.symbol}"
-                )
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(cs.secondary.copy(alpha = 0.10f))
-                        .padding(horizontal = 9.dp, vertical = 5.dp)
-                ) {
+                Spacer(modifier = Modifier.height(3.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        imageVector = Icons.Outlined.Map,
-                        contentDescription = "Buka Peta Rute Lengkap",
+                        imageVector = Icons.Outlined.Schedule,
+                        contentDescription = "Waktu Mulai dan Selesai",
                         tint = cs.secondary,
                         modifier = Modifier.size(13.dp)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "Detail",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.SemiBold,
+                        text = "$startTimeStr – $endTimeStr",
+                        style = TextStyle(
+                            fontFamily = InterFontFamily,
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 12.sp,
+                            fontFeatureSettings = "tnum"
+                        ),
                         color = cs.secondary
                     )
                 }
+            }
+
+            // Distance value
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    text = TelemetryFormatter.formatOdometerHighPrecision(trip.distanceKm, speedUnit.multiplier),
+                    style = TextStyle(
+                        fontFamily = InterFontFamily,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 22.sp,
+                        fontFeatureSettings = "tnum"
+                    ),
+                    color = cs.onSurface
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = speedUnit.distanceSymbol,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = cs.secondary,
+                    modifier = Modifier.padding(bottom = 3.dp)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        HorizontalDivider(thickness = 1.dp, color = cs.outline)
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Bottom Row: Duration, Average Speed, Maximum Speed
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TripSubMetric(
+                label = "Durasi",
+                value = TelemetryFormatter.formatDurationReadable(trip.durationSeconds)
+            )
+            TripSubMetric(
+                label = "Rata-rata",
+                value = "${TelemetryFormatter.formatSpeedOneDecimal(trip.avgSpeedKmh, speedUnit.multiplier)} ${speedUnit.symbol}"
+            )
+            TripSubMetric(
+                label = "Maksimal",
+                value = "${TelemetryFormatter.formatSpeedOneDecimal(trip.maxSpeedKmh, speedUnit.multiplier)} ${speedUnit.symbol}"
+            )
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(cs.secondary.copy(alpha = 0.10f))
+                    .padding(horizontal = 9.dp, vertical = 5.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Map,
+                    contentDescription = "Buka Peta Rute Lengkap",
+                    tint = cs.secondary,
+                    modifier = Modifier.size(13.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "Detail",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = cs.secondary
+                )
             }
         }
     }
@@ -587,11 +589,11 @@ private fun TripDetailView(
             }
 
             item {
-                MotoCard(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier.padding(18.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
+                MotoCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(18.dp)
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(
                             text = "Ringkasan Perjalanan",
                             style = MaterialTheme.typography.titleMedium,

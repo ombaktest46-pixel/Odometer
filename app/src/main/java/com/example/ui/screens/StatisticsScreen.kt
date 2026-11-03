@@ -98,119 +98,118 @@ fun StatisticsScreen(
             // 1. SUMMARY CARD: Total kilometers, Total riding duration, Maximum recorded speed
             item {
                 MotoCard(
+                    contentPadding = PaddingValues(18.dp),
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("stats_all_time_card")
                 ) {
-                    Column(modifier = Modifier.padding(18.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "TOTAL KILOMETER",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = cs.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(verticalAlignment = Alignment.Bottom) {
                                 Text(
-                                    text = "TOTAL KILOMETER",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = cs.onSurfaceVariant
+                                    text = TelemetryFormatter.formatOdometer(
+                                        statistics.totalPermanentOdometerKm,
+                                        speedUnit.multiplier
+                                    ),
+                                    style = TextStyle(
+                                        fontFamily = InterFontFamily,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 36.sp,
+                                        letterSpacing = (-0.8).sp,
+                                        fontFeatureSettings = "tnum"
+                                    ),
+                                    color = cs.onSurface
                                 )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Row(verticalAlignment = Alignment.Bottom) {
-                                    Text(
-                                        text = TelemetryFormatter.formatOdometer(
-                                            statistics.totalPermanentOdometerKm,
-                                            speedUnit.multiplier
-                                        ),
-                                        style = TextStyle(
-                                            fontFamily = InterFontFamily,
-                                            fontWeight = FontWeight.SemiBold,
-                                            fontSize = 36.sp,
-                                            letterSpacing = (-0.8).sp,
-                                            fontFeatureSettings = "tnum"
-                                        ),
-                                        color = cs.onSurface
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = speedUnit.distanceSymbol,
-                                        style = MaterialTheme.typography.titleMedium,
-                                        color = cs.primary,
-                                        modifier = Modifier.padding(bottom = 5.dp)
-                                    )
-                                }
-                            }
-
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier
-                                    .size(44.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(cs.primary.copy(alpha = 0.12f))
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Outlined.TwoWheeler,
-                                    contentDescription = "Total Odometer Motor",
-                                    tint = cs.primary,
-                                    modifier = Modifier.size(22.dp)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = speedUnit.distanceSymbol,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = cs.primary,
+                                    modifier = Modifier.padding(bottom = 5.dp)
                                 )
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(14.dp))
-                        HorizontalDivider(thickness = 1.dp, color = cs.outline)
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(cs.primary.copy(alpha = 0.12f))
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Outlined.Schedule,
-                                    contentDescription = "Total Durasi Berkendara",
-                                    tint = cs.secondary,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Column {
-                                    Text(
-                                        text = "Total Durasi Berkendara",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = cs.onSurfaceVariant
-                                    )
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(
-                                        text = TelemetryFormatter.formatDurationHms(statistics.totalDrivingDurationSeconds),
-                                        style = TextStyle(
-                                            fontFamily = InterFontFamily,
-                                            fontWeight = FontWeight.SemiBold,
-                                            fontSize = 15.sp,
-                                            fontFeatureSettings = "tnum"
-                                        ),
-                                        color = cs.onSurface
-                                    )
-                                }
-                            }
+                            Icon(
+                                imageVector = Icons.Outlined.TwoWheeler,
+                                contentDescription = "Total Odometer Motor",
+                                tint = cs.primary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    }
 
-                            Column(horizontalAlignment = Alignment.End) {
+                    Spacer(modifier = Modifier.height(14.dp))
+                    HorizontalDivider(thickness = 1.dp, color = cs.outline)
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Outlined.Schedule,
+                                contentDescription = "Total Durasi Berkendara",
+                                tint = cs.secondary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
                                 Text(
-                                    text = "Kecepatan Maksimum",
+                                    text = "Total Durasi Berkendara",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = cs.onSurfaceVariant
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = "${TelemetryFormatter.formatSpeedOneDecimal(statistics.allTimeMaxSpeedKmh, speedUnit.multiplier)} ${speedUnit.symbol}",
+                                    text = TelemetryFormatter.formatDurationHms(statistics.totalDrivingDurationSeconds),
                                     style = TextStyle(
                                         fontFamily = InterFontFamily,
                                         fontWeight = FontWeight.SemiBold,
                                         fontSize = 15.sp,
                                         fontFeatureSettings = "tnum"
                                     ),
-                                    color = cs.secondary
+                                    color = cs.onSurface
                                 )
                             }
+                        }
+
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                text = "Kecepatan Maksimum",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = cs.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "${TelemetryFormatter.formatSpeedOneDecimal(statistics.allTimeMaxSpeedKmh, speedUnit.multiplier)} ${speedUnit.symbol}",
+                                style = TextStyle(
+                                    fontFamily = InterFontFamily,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 15.sp,
+                                    fontFeatureSettings = "tnum"
+                                ),
+                                color = cs.secondary
+                            )
                         }
                     }
                 }
@@ -281,11 +280,12 @@ fun StatisticsScreen(
 
             // 5. Overall Average Speed Summary Card
             item {
-                MotoCard(modifier = Modifier.fillMaxWidth()) {
+                MotoCard(
+                    contentPadding = PaddingValues(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -347,39 +347,40 @@ private fun PeriodStatCard(
 ) {
     val cs = MaterialTheme.colorScheme
 
-    MotoCard(modifier = modifier) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = title,
-                    tint = iconTint,
-                    modifier = Modifier.size(14.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = cs.onSurfaceVariant
-                )
-            }
-            Spacer(modifier = Modifier.height(10.dp))
-            Text(
-                text = TelemetryFormatter.formatOdometer(distanceKm, speedUnit.multiplier),
-                style = TextStyle(
-                    fontFamily = InterFontFamily,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 20.sp,
-                    fontFeatureSettings = "tnum"
-                ),
-                color = cs.onSurface
+    MotoCard(
+        modifier = modifier,
+        contentPadding = PaddingValues(14.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = icon,
+                contentDescription = title,
+                tint = iconTint,
+                modifier = Modifier.size(14.dp)
             )
+            Spacer(modifier = Modifier.width(6.dp))
             Text(
-                text = speedUnit.distanceSymbol,
+                text = title,
                 style = MaterialTheme.typography.labelSmall,
                 color = cs.onSurfaceVariant
             )
         }
+        Spacer(modifier = Modifier.height(10.dp))
+        Text(
+            text = TelemetryFormatter.formatOdometer(distanceKm, speedUnit.multiplier),
+            style = TextStyle(
+                fontFamily = InterFontFamily,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 20.sp,
+                fontFeatureSettings = "tnum"
+            ),
+            color = cs.onSurface
+        )
+        Text(
+            text = speedUnit.distanceSymbol,
+            style = MaterialTheme.typography.labelSmall,
+            color = cs.onSurfaceVariant
+        )
     }
 }
 
@@ -403,150 +404,149 @@ private fun TelemetryBarChartCard(
     val selectedPt = points.getOrNull(selectedIndex)
 
     MotoCard(
+        contentPadding = PaddingValues(18.dp),
         modifier = Modifier
             .fillMaxWidth()
             .testTag(testTag)
     ) {
-        Column(modifier = Modifier.padding(18.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Outlined.BarChart,
-                            contentDescription = title,
-                            tint = selectedBarColor,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = title,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = cs.onSurface
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(2.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Outlined.BarChart,
+                        contentDescription = title,
+                        tint = selectedBarColor,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = subtitle,
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = cs.onSurface
+                    )
+                }
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = cs.onSurfaceVariant
+                )
+            }
+
+            if (selectedPt != null) {
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = selectedPt.fullLabel,
                         style = MaterialTheme.typography.labelSmall,
                         color = cs.onSurfaceVariant
                     )
+                    Text(
+                        text = "${TelemetryFormatter.formatOdometer(selectedPt.distanceKm, speedUnit.multiplier)} ${speedUnit.distanceSymbol}",
+                        style = TextStyle(
+                            fontFamily = InterFontFamily,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 15.sp,
+                            fontFeatureSettings = "tnum"
+                        ),
+                        color = selectedBarColor
+                    )
                 }
+            }
+        }
 
-                if (selectedPt != null) {
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text(
-                            text = selectedPt.fullLabel,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = cs.onSurfaceVariant
-                        )
-                        Text(
-                            text = "${TelemetryFormatter.formatOdometer(selectedPt.distanceKm, speedUnit.multiplier)} ${speedUnit.distanceSymbol}",
-                            style = TextStyle(
-                                fontFamily = InterFontFamily,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 15.sp,
-                                fontFeatureSettings = "tnum"
-                            ),
-                            color = selectedBarColor
-                        )
-                    }
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(156.dp)
+        ) {
+            // Minimal subtle horizontal grid lines
+            Canvas(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = 18.dp, bottom = 24.dp)
+            ) {
+                val dashEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f)
+                val levels = listOf(0f, 0.5f, 1f)
+                levels.forEach { frac ->
+                    val y = size.height * frac
+                    drawLine(
+                        color = gridLineColor,
+                        start = Offset(0f, y),
+                        end = Offset(size.width, y),
+                        strokeWidth = 1.dp.toPx(),
+                        pathEffect = if (frac < 1f) dashEffect else null
+                    )
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(156.dp)
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.Bottom
             ) {
-                // Minimal subtle horizontal grid lines
-                Canvas(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(top = 18.dp, bottom = 24.dp)
-                ) {
-                    val dashEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f)
-                    val levels = listOf(0f, 0.5f, 1f)
-                    levels.forEach { frac ->
-                        val y = size.height * frac
-                        drawLine(
-                            color = gridLineColor,
-                            start = Offset(0f, y),
-                            end = Offset(size.width, y),
-                            strokeWidth = 1.dp.toPx(),
-                            pathEffect = if (frac < 1f) dashEffect else null
-                        )
+                points.forEachIndexed { idx, pt ->
+                    val isSelected = idx == selectedIndex
+                    val fraction = if (pt.distanceKm <= 0.0) {
+                        0.04f
+                    } else {
+                        (pt.distanceKm / maxDist).toFloat().coerceIn(0.08f, 1f)
                     }
-                }
 
-                Row(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.Bottom
-                ) {
-                    points.forEachIndexed { idx, pt ->
-                        val isSelected = idx == selectedIndex
-                        val fraction = if (pt.distanceKm <= 0.0) {
-                            0.04f
-                        } else {
-                            (pt.distanceKm / maxDist).toFloat().coerceIn(0.08f, 1f)
-                        }
-
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Bottom,
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable { selectedIndex = idx }
-                                .padding(vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = if (pt.distanceKm > 0.0) {
-                                    TelemetryFormatter.formatOdometer(pt.distanceKm, speedUnit.multiplier)
-                                } else {
-                                    "0"
-                                },
-                                style = TextStyle(
-                                    fontFamily = InterFontFamily,
-                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                                    fontSize = 10.sp,
-                                    fontFeatureSettings = "tnum"
-                                ),
-                                color = if (isSelected) selectedBarColor else cs.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth(0.58f)
-                                    .weight(1f),
-                                contentAlignment = Alignment.BottomCenter
-                            ) {
-                                Canvas(modifier = Modifier.fillMaxSize()) {
-                                    val barH = size.height * fraction
-                                    val topY = size.height - barH
-                                    drawRoundRect(
-                                        color = if (isSelected) selectedBarColor else unselectedBarColor,
-                                        topLeft = Offset(0f, topY),
-                                        size = Size(size.width, barH),
-                                        cornerRadius = CornerRadius(6.dp.toPx(), 6.dp.toPx())
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = pt.label,
-                                style = MaterialTheme.typography.labelSmall,
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Bottom,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { selectedIndex = idx }
+                            .padding(vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = if (pt.distanceKm > 0.0) {
+                                TelemetryFormatter.formatOdometer(pt.distanceKm, speedUnit.multiplier)
+                            } else {
+                                "0"
+                            },
+                            style = TextStyle(
+                                fontFamily = InterFontFamily,
                                 fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                                color = if (isSelected) cs.onSurface else cs.onSurfaceVariant
-                            )
+                                fontSize = 10.sp,
+                                fontFeatureSettings = "tnum"
+                            ),
+                            color = if (isSelected) selectedBarColor else cs.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(0.58f)
+                                .weight(1f),
+                            contentAlignment = Alignment.BottomCenter
+                        ) {
+                            Canvas(modifier = Modifier.fillMaxSize()) {
+                                val barH = size.height * fraction
+                                val topY = size.height - barH
+                                drawRoundRect(
+                                    color = if (isSelected) selectedBarColor else unselectedBarColor,
+                                    topLeft = Offset(0f, topY),
+                                    size = Size(size.width, barH),
+                                    cornerRadius = CornerRadius(6.dp.toPx(), 6.dp.toPx())
+                                )
+                            }
                         }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = pt.label,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (isSelected) cs.onSurface else cs.onSurfaceVariant
+                        )
                     }
                 }
             }
