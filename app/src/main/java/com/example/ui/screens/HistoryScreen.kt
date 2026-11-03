@@ -102,8 +102,13 @@ fun HistoryScreen(
         trips.firstOrNull { RouteJsonCodec.decodeRoutePoints(it.routePointsJson).isNotEmpty() }
             ?: trips.firstOrNull()
     }
-    val overviewRoutePoints = remember(trips) {
-        trips.flatMap { RouteJsonCodec.decodeRoutePoints(it.routePointsJson) }
+    val overviewRouteSegments = remember(trips) {
+        trips.mapNotNull { trip ->
+            RouteJsonCodec.decodeRoutePoints(trip.routePointsJson).takeIf { it.isNotEmpty() }
+        }
+    }
+    val overviewRoutePoints = remember(overviewRouteSegments) {
+        overviewRouteSegments.flatten()
     }
 
     Box(
@@ -236,6 +241,7 @@ fun HistoryScreen(
                     item {
                         VectorRouteMapCanvas(
                             routePoints = overviewRoutePoints,
+                            routeSegments = overviewRouteSegments,
                             startLabel = latestTripWithRoute?.startCoordLabel ?: "Menunggu Rute GPS",
                             endLabel = latestTripWithRoute?.endCoordLabel ?: "Titik Parkir GPS",
                             mapHeight = 220.dp

@@ -73,10 +73,13 @@ import androidx.compose.ui.unit.sp
 import com.example.model.RoutePoint
 import com.example.ui.theme.InterFontFamily
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.floor
@@ -86,6 +89,7 @@ import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.sin
+import kotlin.math.sqrt
 import kotlin.math.tan
 
 enum class RouteMapMode(val label: String) {
@@ -98,27 +102,28 @@ enum class StreetTileStyle(val label: String) {
     STREET("Terang")
 }
 
-/**
- * Official application identity User-Agent compliant with OpenStreetMap Tile Usage Policy
- * (https://operations.osmfoundation.org/policies/tiles/).
- * Never spoof a generic browser User-Agent or fake Referer, as OSM blocks those with HTTP 418.
- */
 private const val OSM_COMPLIANT_USER_AGENT =
-    "MotoOdoGpsTracker/1.0.2 (Android; Package/com.aistudio.motoodo.vxkrmp; +https://openstreetmap.org)"
+    "MotoOdoGpsTracker/1.0.3 (Android; Package/com.aistudio.motoodo.vxkrmp; +https://openstreetmap.org)"
 
-private val DarkMapColorFilter = ColorFilter.colorMatrix(
+/**
+ * Luminance-preserving Dark Slate ColorMatrix:
+ * First converts RGB tile pixels to neutral luminance (0.299R + 0.587G + 0.114B) and then
+ * inverts into a clean dark automotive slate (#19202B background, crisp silver street labels).
+ * Prevents green forests/terrain from turning purple when inverted.
+ */
+private val DarkSlateOsmColorFilter = ColorFilter.colorMatrix(
     ColorMatrix(
         floatArrayOf(
-            -0.78f, 0.0f, 0.0f, 0f, 212f,
-            0.0f, -0.76f, 0.0f, 0f, 218f,
-            0.0f, 0.0f, -0.70f, 0f, 230f,
-            0.0f, 0.0f, 0.0f, 1f, 0f
+            -0.203f, -0.399f, -0.078f, 0f, 192f,
+            -0.203f, -0.399f, -0.078f, 0f, 199f,
+            -0.203f, -0.399f, -0.078f, 0f, 210f,
+            0f, 0f, 0f, 1f, 0f
         )
     )
 )
 
 private object CompliantTileMemoryCache {
-    private val cache = object : LruCache<String, ImageBitmap>(96) {}
+    private val cache = object : LruCache<String, ImageBitmap>(120) {}
 
     fun get(key: String): ImageBitmap? = synchronized(cache) { cache.get(key) }
 
@@ -130,12 +135,8 @@ private data class MapTileRequestKey(
     val x: Int,
     val y: Int
 ) {
-    val cacheKey: String get() = "tile_v3/$z/$x/$y"
+    val cacheKey: String get() = "tile_v4/$z/$x/$y"
 
-    /**
-     * Primary & fallback tile endpoints that comply with OpenStreetMap & public street tile policies.
-     * Note: ArcGIS World_Street_Map uses /tile/{z}/{y}/{x} order.
-     */
     fun buildUrls(): List<String> = listOf(
         "https://tile.openstreetmap.org/$z/$x/$y.png",
         "https://tile.openstreetmap.de/$z/$x/$y.png",
@@ -166,13 +167,47 @@ private fun chooseBestTileZoom(latSpan: Double, lngSpan: Double): Int {
     }
 }
 
+/**
+ * Calculates distance in meters between two GPS coordinates using Haversine formula.
+ */
+private fun haversineDistanceMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+    val r = 6371000.0
+    val dLat = Math.toRadians(lat2 - lat1)
+    val dLon = Math.toRadians(lon2 - lon1)
+    val a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) *
+        sin(dLon / 2) * sin(dLon / 2)
+    val c = 2 * atan2(sqrt(a), sqrt(1.0 - a))
+    return r * c
+}
+
+/**
+ * Determines whether two consecutive RoutePoints belong to the same continuous driving segment.
+ * Prevents drawing a long straight green line ("garis ijo panjang") when:
+ * 1) Multiple trips are combined on the overview map (timestamp jumps backwards or > 90s gap), or
+ * 2) GPS signal jumps > 200 meters between two samples.
+ */
+private fun isContinuousRouteSegment(p1: RoutePoint, p2: RoutePoint): Boolean {
+    if (p1.timestamp > 0L && p2.timestamp > 0L) {
+        val dtMillis = p2.timestamp - p1.timestamp
+        if (dtMillis < 0L || dtMillis > 90_000L) {
+            return false
+        }
+    }
+    val distMeters = haversineDistanceMeters(p1.lat, p1.lng, p2.lat, p2.lng)
+    return distMeters <= 200.0
+}
+
 @Composable
 fun VectorRouteMapCanvas(
     routePoints: List<RoutePoint>,
     startLabel: String,
     endLabel: String,
     modifier: Modifier = Modifier,
-    mapHeight: Dp = 260.dp
+    mapHeight: Dp = 260.dp,
+    routeSegments: List<List<RoutePoint>> = remember(routePoints) {
+        if (routePoints.isEmpty()) emptyList() else listOf(routePoints)
+    }
 ) {
     val cs = MaterialTheme.colorScheme
     val isLightTheme = cs.background.luminance() > 0.5f
@@ -305,7 +340,7 @@ fun VectorRouteMapCanvas(
                 mapMode == RouteMapMode.STREET_MAP && tileStyle == StreetTileStyle.STREET ->
                     Color(0xFFEEF2F6)
                 mapMode == RouteMapMode.STREET_MAP && tileStyle == StreetTileStyle.DARK ->
-                    Color(0xFF141923)
+                    Color(0xFF19202B)
                 isLightTheme -> Color(0xFFF3F5F8)
                 else -> Color(0xFF151A22)
             }
@@ -343,6 +378,7 @@ fun VectorRouteMapCanvas(
             ) {
                 NativeInteractiveRouteMapCanvas(
                     routePoints = routePoints,
+                    routeSegments = routeSegments,
                     mapMode = mapMode,
                     tileStyle = tileStyle,
                     zoom = zoom,
@@ -519,6 +555,9 @@ fun MiniRoutePreviewCanvas(
     val cs = MaterialTheme.colorScheme
     val isLight = cs.background.luminance() > 0.5f
     val previewBg = if (isLight) Color(0xFFEEF2F6) else Color(0xFF141923)
+    val segments = remember(routePoints) {
+        if (routePoints.isEmpty()) emptyList() else listOf(routePoints)
+    }
 
     Box(
         modifier = modifier
@@ -529,6 +568,7 @@ fun MiniRoutePreviewCanvas(
     ) {
         NativeInteractiveRouteMapCanvas(
             routePoints = routePoints,
+            routeSegments = segments,
             mapMode = RouteMapMode.VECTOR_RADAR,
             tileStyle = if (isLight) StreetTileStyle.STREET else StreetTileStyle.DARK,
             zoom = 1f,
@@ -542,6 +582,7 @@ fun MiniRoutePreviewCanvas(
 @Composable
 private fun NativeInteractiveRouteMapCanvas(
     routePoints: List<RoutePoint>,
+    routeSegments: List<List<RoutePoint>>,
     mapMode: RouteMapMode,
     tileStyle: StreetTileStyle,
     zoom: Float,
@@ -580,6 +621,7 @@ private fun NativeInteractiveRouteMapCanvas(
     val centerTileX = floor(centerTileXExact).toInt()
     val centerTileY = floor(centerTileYExact).toInt()
 
+    // Prioritize center tiles first so the viewport fills immediately from center outward
     val tileKeys = remember(mapMode, tileZoom, centerTileX, centerTileY, isCompactPreview) {
         if (isCompactPreview || mapMode != RouteMapMode.STREET_MAP) {
             emptyList()
@@ -593,25 +635,29 @@ private fun NativeInteractiveRouteMapCanvas(
                         add(MapTileRequestKey(tileZoom, tx, ty))
                     }
                 }
-            }.distinctBy { it.cacheKey }
+            }
+                .distinctBy { it.cacheKey }
+                .sortedBy { abs(it.x - centerTileX) + abs(it.y - centerTileY) }
         }
     }
 
     LaunchedEffect(tileKeys) {
-        tileKeys.forEach { key ->
-            val cached = CompliantTileMemoryCache.get(key.cacheKey)
-            if (cached != null) {
-                loadedTiles[key.cacheKey] = cached
-            } else {
-                withContext(Dispatchers.IO) {
-                    for (urlStr in key.buildUrls()) {
-                        val bmp = fetchCompliantTileBitmap(urlStr)
-                        if (bmp != null) {
-                            CompliantTileMemoryCache.put(key.cacheKey, bmp)
-                            withContext(Dispatchers.Main) {
-                                loadedTiles[key.cacheKey] = bmp
+        coroutineScope {
+            tileKeys.forEach { key ->
+                val cached = CompliantTileMemoryCache.get(key.cacheKey)
+                if (cached != null) {
+                    loadedTiles[key.cacheKey] = cached
+                } else {
+                    launch(Dispatchers.IO) {
+                        for (urlStr in key.buildUrls()) {
+                            val bmp = fetchCompliantTileBitmap(urlStr)
+                            if (bmp != null) {
+                                CompliantTileMemoryCache.put(key.cacheKey, bmp)
+                                withContext(Dispatchers.Main) {
+                                    loadedTiles[key.cacheKey] = bmp
+                                }
+                                break
                             }
-                            break
                         }
                     }
                 }
@@ -712,7 +758,7 @@ private fun NativeInteractiveRouteMapCanvas(
             gy += scaledStep
         }
 
-        // In STREET_MAP mode, draw loaded tiles (with DarkMapColorFilter when Gelap is active)
+        // In STREET_MAP mode, draw loaded tiles (with DarkSlateOsmColorFilter when Gelap is active)
         if (!isCompactPreview && mapMode == RouteMapMode.STREET_MAP) {
             if (loadedTiles.isEmpty()) {
                 val artX = (centerX + panOffset.x).coerceIn(0f, w)
@@ -730,7 +776,7 @@ private fun NativeInteractiveRouteMapCanvas(
                     strokeWidth = 6.dp.toPx()
                 )
             } else {
-                val tileFilter = if (tileStyle == StreetTileStyle.DARK) DarkMapColorFilter else null
+                val tileFilter = if (tileStyle == StreetTileStyle.DARK) DarkSlateOsmColorFilter else null
                 tileKeys.forEach { key ->
                     val bmp = loadedTiles[key.cacheKey] ?: return@forEach
                     val dxTiles = key.x - centerTileXExact
@@ -748,7 +794,7 @@ private fun NativeInteractiveRouteMapCanvas(
                                 effectiveTileSizePx.roundToInt() + 1,
                                 effectiveTileSizePx.roundToInt() + 1
                             ),
-                            alpha = 0.95f,
+                            alpha = 0.96f,
                             colorFilter = tileFilter
                         )
                     }
@@ -770,43 +816,62 @@ private fun NativeInteractiveRouteMapCanvas(
             )
         }
 
-        val projected = routePoints.map { project(it) }
+        val activeSegments = if (routeSegments.isNotEmpty()) routeSegments else listOf(routePoints)
+        val projectedSegments = activeSegments.map { seg -> seg.map { project(it) } }
+        val projectedAll = routePoints.map { project(it) }
 
-        // 3. Draw Route Casing, Glow, and Speed-Colored Segments
-        if (projected.size >= 2) {
-            val fullPath = Path().apply {
-                moveTo(projected.first().x, projected.first().y)
-                for (i in 1 until projected.size) {
-                    lineTo(projected[i].x, projected[i].y)
+        // 3. Draw Route Casing, Glow, and Speed-Colored Segments independently per Trip Segment
+        val fullPath = Path().apply {
+            for (sIdx in activeSegments.indices) {
+                val segPts = activeSegments[sIdx]
+                val segProj = projectedSegments[sIdx]
+                if (segProj.size >= 2) {
+                    moveTo(segProj.first().x, segProj.first().y)
+                    for (i in 1 until segProj.size) {
+                        if (isContinuousRouteSegment(segPts[i - 1], segPts[i])) {
+                            lineTo(segProj[i].x, segProj[i].y)
+                        } else {
+                            moveTo(segProj[i].x, segProj[i].y)
+                        }
+                    }
                 }
             }
+        }
 
+        drawPath(
+            path = fullPath,
+            color = primaryColor.copy(alpha = if (isCompactPreview) 0.18f else 0.24f),
+            style = Stroke(
+                width = if (isCompactPreview) 6.dp.toPx() else 12.dp.toPx(),
+                cap = StrokeCap.Round,
+                join = StrokeJoin.Round
+            )
+        )
+
+        if (!isCompactPreview) {
             drawPath(
                 path = fullPath,
-                color = primaryColor.copy(alpha = if (isCompactPreview) 0.18f else 0.24f),
+                color = if (isStreetLight) Color.White else Color(0xFF0E131A),
                 style = Stroke(
-                    width = if (isCompactPreview) 6.dp.toPx() else 12.dp.toPx(),
+                    width = 6.5.dp.toPx(),
                     cap = StrokeCap.Round,
                     join = StrokeJoin.Round
                 )
             )
+        }
 
-            if (!isCompactPreview) {
-                drawPath(
-                    path = fullPath,
-                    color = if (isStreetLight) Color.White else Color(0xFF0E131A),
-                    style = Stroke(
-                        width = 6.5.dp.toPx(),
-                        cap = StrokeCap.Round,
-                        join = StrokeJoin.Round
-                    )
-                )
-            }
+        for (sIdx in activeSegments.indices) {
+            val segPts = activeSegments[sIdx]
+            val segProj = projectedSegments[sIdx]
+            if (segProj.size < 2) continue
 
-            for (i in 0 until projected.lastIndex) {
-                val p1 = projected[i]
-                val p2 = projected[i + 1]
-                val spd = routePoints[i + 1].speedKmh
+            for (i in 0 until segProj.lastIndex) {
+                if (!isContinuousRouteSegment(segPts[i], segPts[i + 1])) {
+                    continue
+                }
+                val p1 = segProj[i]
+                val p2 = segProj[i + 1]
+                val spd = segPts[i + 1].speedKmh
                 val segColor = when {
                     spd < 42f -> primaryColor
                     spd < 68f -> secondaryColor
@@ -821,11 +886,14 @@ private fun NativeInteractiveRouteMapCanvas(
                 )
             }
 
-            if (!isCompactPreview && projected.size >= 6) {
-                val step = (projected.size / 4).coerceAtLeast(2)
-                for (i in step until projected.lastIndex step step) {
-                    val prev = projected[i - 1]
-                    val curr = projected[i]
+            if (!isCompactPreview && segProj.size >= 6) {
+                val step = (segProj.size / 4).coerceAtLeast(2)
+                for (i in step until segProj.lastIndex step step) {
+                    if (!isContinuousRouteSegment(segPts[i - 1], segPts[i])) {
+                        continue
+                    }
+                    val prev = segProj[i - 1]
+                    val curr = segProj[i]
                     val dx = curr.x - prev.x
                     val dy = curr.y - prev.y
                     val dist = kotlin.math.hypot(dx.toDouble(), dy.toDouble()).toFloat()
@@ -860,45 +928,20 @@ private fun NativeInteractiveRouteMapCanvas(
             }
         }
 
-        // 4. Draw Start Pin (GREEN) & Finish Pin (RED)
-        val firstPt = projected.first()
+        // 4. Draw Start Pin (GREEN) & Finish Pin (RED) for each Trip Segment
         val pinRadius = if (isCompactPreview) 3.5.dp.toPx() else 6.5.dp.toPx()
 
-        drawCircle(
-            color = primaryColor.copy(alpha = 0.28f),
-            radius = pinRadius * 2.1f,
-            center = firstPt
-        )
-        drawCircle(
-            color = Color.White,
-            radius = pinRadius * 1.25f,
-            center = firstPt
-        )
-        drawCircle(
-            color = primaryColor,
-            radius = pinRadius,
-            center = firstPt
-        )
+        for (sIdx in projectedSegments.indices) {
+            val segProj = projectedSegments[sIdx]
+            if (segProj.isEmpty()) continue
+            drawPinMarker(segProj.first(), primaryColor, pinRadius)
+            if (segProj.size > 1) {
+                drawPinMarker(segProj.last(), errorColor, pinRadius)
+            }
+        }
 
-        val lastPt = projected.last()
-        drawCircle(
-            color = errorColor.copy(alpha = 0.28f),
-            radius = pinRadius * 2.1f,
-            center = lastPt
-        )
-        drawCircle(
-            color = Color.White,
-            radius = pinRadius * 1.25f,
-            center = lastPt
-        )
-        drawCircle(
-            color = errorColor,
-            radius = pinRadius,
-            center = lastPt
-        )
-
-        if (!isCompactPreview && selectedPointIndex in projected.indices) {
-            val selPt = projected[selectedPointIndex]
+        if (!isCompactPreview && selectedPointIndex in projectedAll.indices) {
+            val selPt = projectedAll[selectedPointIndex]
             drawCircle(
                 color = secondaryColor.copy(alpha = 0.30f),
                 radius = pinRadius * 2.4f,
@@ -950,10 +993,28 @@ private fun NativeInteractiveRouteMapCanvas(
     }
 }
 
-/**
- * Fetches a map tile using an OSM-policy-compliant User-Agent without spoofed Referer headers,
- * and rejects HTTP 418 / non-200 or blocked placeholder tiles.
- */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawPinMarker(
+    center: Offset,
+    color: Color,
+    pinRadius: Float
+) {
+    drawCircle(
+        color = color.copy(alpha = 0.28f),
+        radius = pinRadius * 2.1f,
+        center = center
+    )
+    drawCircle(
+        color = Color.White,
+        radius = pinRadius * 1.25f,
+        center = center
+    )
+    drawCircle(
+        color = color,
+        radius = pinRadius,
+        center = center
+    )
+}
+
 private fun fetchCompliantTileBitmap(urlStr: String): ImageBitmap? {
     return runCatching {
         val connection = (URL(urlStr).openConnection() as HttpURLConnection).apply {
@@ -971,7 +1032,7 @@ private fun fetchCompliantTileBitmap(urlStr: String): ImageBitmap? {
             }
             connection.inputStream.use { stream ->
                 val bmp = BitmapFactory.decodeStream(stream) ?: return@use null
-                if (isLikelyBlockedPlaceholderTile(bmp)) {
+                if (isBlocked418BannerTile(bmp)) {
                     null
                 } else {
                     bmp.asImageBitmap()
@@ -984,23 +1045,15 @@ private fun fetchCompliantTileBitmap(urlStr: String): ImageBitmap? {
 }
 
 /**
- * Detects if a returned 256x256 bitmap is the OSM 418 "Access blocked" warning banner
- * (which has a distinct pure-white/blue diagonal caution stripe at x=48..54).
+ * Specifically detects the OpenStreetMap HTTP 418 blocked placeholder image
+ * (which has exact #222222 dark gray background AND a bright blue/white caution stripe at x=48..52).
  */
-private fun isLikelyBlockedPlaceholderTile(bmp: Bitmap): Boolean {
+private fun isBlocked418BannerTile(bmp: Bitmap): Boolean {
     if (bmp.width < 100 || bmp.height < 100) return true
-    // Sample a few pixels; if the top-left corner is exact dark-gray #222222 (#FF222222) across the banner
-    val p1 = bmp.getPixel(10, 10)
-    val p2 = bmp.getPixel(120, 10)
-    val r1 = (p1 shr 16) and 0xFF
-    val g1 = (p1 shr 8) and 0xFF
-    val b1 = p1 and 0xFF
-    val r2 = (p2 shr 16) and 0xFF
-    val g2 = (p2 shr 8) and 0xFF
-    val b2 = p2 and 0xFF
-    val isDarkBanner = (r1 in 28..40 && g1 in 28..40 && b1 in 28..40) &&
-        (r2 in 28..40 && g2 in 28..40 && b2 in 28..40)
-    return isDarkBanner
+    val bg1 = bmp.getPixel(12, 12) and 0xFFFFFF
+    val bg2 = bmp.getPixel(180, 12) and 0xFFFFFF
+    // The 418 tile has exact solid #222222 (0x222222) background on both left and right sides
+    return bg1 == 0x222222 && bg2 == 0x222222
 }
 
 @Composable
