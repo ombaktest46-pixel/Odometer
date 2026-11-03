@@ -29,8 +29,6 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material.icons.filled.TwoWheeler
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -57,6 +55,7 @@ import com.example.data.RouteJsonCodec
 import com.example.data.TripEntity
 import com.example.model.SpeedUnit
 import com.example.model.TelemetryFormatter
+import com.example.ui.components.MiniRoutePreviewCanvas
 import com.example.ui.components.VectorRouteMapCanvas
 import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.CarbonBlack
@@ -80,10 +79,11 @@ fun HistoryScreen(
     speedUnit: SpeedUnit,
     onDeleteTrip: (Long) -> Unit,
     onDeleteAllTrips: () -> Unit,
-    onStartSimulationFromEmpty: () -> Unit,
+    onStartSimulationFromEmpty: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var selectedTrip by remember { mutableStateOf<TripEntity?>(null) }
+    var showOverviewMap by remember { mutableStateOf(true) }
     var showClearAllDialog by remember { mutableStateOf(false) }
 
     if (selectedTrip != null) {
@@ -101,6 +101,15 @@ fun HistoryScreen(
             modifier = modifier
         )
         return
+    }
+
+    // Aggregate route points from the latest recorded trip (or combined trips) for top overview map
+    val latestTripWithRoute = remember(trips) {
+        trips.firstOrNull { RouteJsonCodec.decodeRoutePoints(it.routePointsJson).isNotEmpty() }
+            ?: trips.firstOrNull()
+    }
+    val overviewRoutePoints = remember(trips) {
+        trips.flatMap { RouteJsonCodec.decodeRoutePoints(it.routePointsJson) }
     }
 
     Box(
@@ -121,12 +130,12 @@ fun HistoryScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "RIWAYAT PERJALANAN",
+                        text = "RIWAYAT & PETA PERJALANAN",
                         fontFamily = OrbitronFontFamily,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 20.sp,
+                        fontSize = 19.sp,
                         color = NeonGreen
                     )
                     Text(
@@ -136,16 +145,49 @@ fun HistoryScreen(
                     )
                 }
 
-                if (trips.isNotEmpty()) {
-                    IconButton(
-                        onClick = { showClearAllDialog = true },
-                        modifier = Modifier.testTag("btn_clear_all_history")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Toggle Overview Map visibility button
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (showOverviewMap) NeonGreen.copy(alpha = 0.18f) else PanelElevatedGray)
+                            .border(
+                                1.dp,
+                                if (showOverviewMap) NeonGreen else PanelBorderGray,
+                                RoundedCornerShape(10.dp)
+                            )
+                            .clickable { showOverviewMap = !showOverviewMap }
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                            .testTag("btn_toggle_history_overview_map")
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.DeleteSweep,
-                            contentDescription = "Hapus Semua Riwayat",
-                            tint = CrimsonRed
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Map,
+                                contentDescription = "Tampilkan Peta Rute",
+                                tint = if (showOverviewMap) NeonGreen else TextSecondarySilver,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(5.dp))
+                            Text(
+                                text = if (showOverviewMap) "TUTUP PETA" else "BUKA PETA",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (showOverviewMap) NeonGreen else TextSecondarySilver
+                            )
+                        }
+                    }
+
+                    if (trips.isNotEmpty()) {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        IconButton(
+                            onClick = { showClearAllDialog = true },
+                            modifier = Modifier.testTag("btn_clear_all_history")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DeleteSweep,
+                                contentDescription = "Hapus Semua Riwayat",
+                                tint = CrimsonRed
+                            )
+                        }
                     }
                 }
             }
@@ -159,74 +201,91 @@ fun HistoryScreen(
                     .clip(RoundedCornerShape(12.dp))
                     .background(PanelElevatedGray)
                     .border(1.dp, NeonGreen.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
                     imageVector = Icons.Default.Lock,
                     contentDescription = "Proteksi Odometer Permanen",
                     tint = NeonGreen,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(16.dp)
                 )
-                Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Total Odometer Permanen (${TelemetryFormatter.formatOdometer(totalPermanentOdometerKm, speedUnit.multiplier)} ${speedUnit.distanceSymbol}) tersimpan terpisah dan TIDAK akan berkurang meskipun riwayat dihapus.",
+                    text = "Total Odometer Permanen (${TelemetryFormatter.formatOdometer(totalPermanentOdometerKm, speedUnit.multiplier)} ${speedUnit.distanceSymbol}) tetap utuh meskipun riwayat dihapus.",
                     style = MaterialTheme.typography.bodyMedium,
-                    fontSize = 12.sp,
+                    fontSize = 11.sp,
                     color = TextPrimaryWhite
                 )
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            if (trips.isEmpty()) {
-                // Empty State with helpful tip and quick test simulation button
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(24.dp)
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .size(72.dp)
-                                .clip(CircleShape)
-                                .background(PanelElevatedGray)
-                                .border(1.dp, PanelBorderGray, CircleShape)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Route,
-                                contentDescription = "Belum Ada Riwayat",
-                                tint = CyberCyan,
-                                modifier = Modifier.size(36.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = "Belum Ada Riwayat Perjalanan",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = TextPrimaryWhite
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "Ketika Auto Tracking aktif, GPS HP menyala, dan motor mulai bergerak di jalan, perjalanan akan otomatis dicatat dan disimpan ke halaman ini saat motor parkir.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = TextSecondarySilver,
-                            textAlign = TextAlign.Center
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(bottom = 24.dp),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                // Interactive Street Map Overview right on the History Screen!
+                if (showOverviewMap) {
+                    item {
+                        VectorRouteMapCanvas(
+                            routePoints = overviewRoutePoints,
+                            startLabel = latestTripWithRoute?.startCoordLabel ?: "Menunggu Rute GPS",
+                            endLabel = latestTripWithRoute?.endCoordLabel ?: "Titik Parkir GPS",
+                            mapHeight = 225.dp
                         )
                     }
                 }
-            } else {
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    contentPadding = PaddingValues(bottom = 24.dp),
-                    modifier = Modifier.fillMaxSize()
-                ) {
+
+                if (trips.isEmpty()) {
+                    item {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(PanelDarkGray)
+                                .border(1.dp, PanelBorderGray, RoundedCornerShape(18.dp))
+                                .padding(24.dp)
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .size(60.dp)
+                                        .clip(CircleShape)
+                                        .background(PanelElevatedGray)
+                                        .border(1.dp, PanelBorderGray, CircleShape)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Route,
+                                        contentDescription = "Belum Ada Riwayat",
+                                        tint = CyberCyan,
+                                        modifier = Modifier.size(30.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    text = "Belum Ada Riwayat Perjalanan",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = TextPrimaryWhite
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = "Ketika Auto Tracking aktif, GPS HP menyala, dan motor mulai bergerak di jalan, rute GPS dan statistik setiap perjalanan otomatis tersimpan dan tampil pada peta di atas.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontSize = 12.sp,
+                                    color = TextSecondarySilver,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+                } else {
                     items(trips, key = { it.id }) { trip ->
                         TripHistoryItemCard(
                             trip = trip,
@@ -286,6 +345,9 @@ private fun TripHistoryItemCard(
     val indoLocale = remember { Locale("id", "ID") }
     val dateFmt = remember { SimpleDateFormat("EEEE, dd MMM yyyy", indoLocale) }
     val timeFmt = remember { SimpleDateFormat("HH:mm", indoLocale) }
+    val routePoints = remember(trip.routePointsJson) {
+        RouteJsonCodec.decodeRoutePoints(trip.routePointsJson)
+    }
 
     val dateStr = dateFmt.format(Date(trip.startTimeMillis))
     val timeRangeStr = "${timeFmt.format(Date(trip.startTimeMillis))} - ${timeFmt.format(Date(trip.endTimeMillis))} WIB"
@@ -305,6 +367,14 @@ private fun TripHistoryItemCard(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Mini Route Preview Thumbnail on the left of each trip card
+            MiniRoutePreviewCanvas(
+                routePoints = routePoints,
+                modifier = Modifier.size(width = 72.dp, height = 56.dp)
+            )
+
+            Spacer(modifier = Modifier.width(12.dp))
+
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = dateStr,
@@ -324,15 +394,13 @@ private fun TripHistoryItemCard(
                         style = MaterialTheme.typography.labelSmall,
                         color = CyberCyan
                     )
-                    if (trip.isSimulated) {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "• SIMULASI",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = AmberWarning
-                        )
-                    }
                 }
+                Text(
+                    text = "${routePoints.size} titik koordinat rute",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontSize = 10.sp,
+                    color = TextSecondarySilver
+                )
             }
 
             // Distance Badge
@@ -341,7 +409,7 @@ private fun TripHistoryItemCard(
                     text = TelemetryFormatter.formatOdometerHighPrecision(trip.distanceKm, speedUnit.multiplier),
                     fontFamily = OrbitronFontFamily,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 22.sp,
+                    fontSize = 20.sp,
                     color = NeonGreen
                 )
                 Spacer(modifier = Modifier.width(4.dp))
@@ -378,16 +446,22 @@ private fun TripHistoryItemCard(
                 label = "MAKSIMAL",
                 value = "${TelemetryFormatter.formatSpeedOneDecimal(trip.maxSpeedKmh, speedUnit.multiplier)} ${speedUnit.symbol}"
             )
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(NeonGreen.copy(alpha = 0.16f))
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
                 Icon(
                     imageVector = Icons.Default.Map,
-                    contentDescription = "Lihat Peta Rute",
+                    contentDescription = "Buka Peta Rute Lengkap",
                     tint = NeonGreen,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(15.dp)
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = "PETA",
+                    text = "BUKA PETA",
                     style = MaterialTheme.typography.labelSmall,
                     color = NeonGreen
                 )
@@ -460,7 +534,7 @@ private fun TripDetailView(
                         }
                         Column {
                             Text(
-                                text = "DETAIL PERJALANAN",
+                                text = "PETA & DETAIL PERJALANAN",
                                 fontFamily = OrbitronFontFamily,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 18.sp,
@@ -484,12 +558,13 @@ private fun TripDetailView(
                 }
             }
 
-            // Interactive Vector Route Map Canvas
+            // Full Interactive Street + Vector Map
             item {
                 VectorRouteMapCanvas(
                     routePoints = routePoints,
                     startLabel = trip.startCoordLabel,
-                    endLabel = trip.endCoordLabel
+                    endLabel = trip.endCoordLabel,
+                    mapHeight = 320.dp
                 )
             }
 
