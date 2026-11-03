@@ -51,6 +51,9 @@ interface TripDao {
     @Query("DELETE FROM trips WHERE id = :tripId")
     suspend fun deleteTripById(tripId: Long)
 
+    @Query("DELETE FROM trips WHERE isSimulated = 1")
+    suspend fun deleteSimulatedTrips()
+
     @Query("DELETE FROM trips")
     suspend fun deleteAllTrips()
 }
@@ -115,6 +118,8 @@ class TripRepository(
     val allTripsFlow: Flow<List<TripEntity>> = tripDao.getAllTripsFlow()
 
     suspend fun insertTrip(trip: TripEntity): Long = tripDao.insertTrip(trip)
+
+    suspend fun deleteSimulatedTrips() = tripDao.deleteSimulatedTrips()
 
     /**
      * Deletes a single trip from history. Total Odometer is NEVER reduced.

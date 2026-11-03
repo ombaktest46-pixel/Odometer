@@ -214,31 +214,11 @@ fun HistoryScreen(
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Ketika Auto Tracking aktif dan motor mulai bergerak, perjalanan akan otomatis dicatat dan disimpan ke halaman ini saat motor parkir.",
+                            text = "Ketika Auto Tracking aktif, GPS HP menyala, dan motor mulai bergerak di jalan, perjalanan akan otomatis dicatat dan disimpan ke halaman ini saat motor parkir.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = TextSecondarySilver,
                             textAlign = TextAlign.Center
                         )
-                        Spacer(modifier = Modifier.height(18.dp))
-                        Button(
-                            onClick = onStartSimulationFromEmpty,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = CyberCyan,
-                                contentColor = CarbonBlack
-                            ),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.testTag("btn_empty_start_simulation")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.TwoWheeler,
-                                contentDescription = "Uji Simulasi Perjalanan"
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Uji Simulasi Berkendara Sekarang",
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
                     }
                 }
             } else {

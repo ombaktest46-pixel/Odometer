@@ -74,6 +74,8 @@ class MotoOdoViewModel(
 
     init {
         viewModelScope.launch {
+            odometerPreferences.cleanUpSimulationResidueOnce()
+            tripRepository.deleteSimulatedTrips()
             odometerPreferences.persistedDataFlow.collect { persisted ->
                 TelemetryStateHolder.syncFromPersisted(
                     totalOdoKm = persisted.totalOdometerKm,
@@ -98,7 +100,7 @@ class MotoOdoViewModel(
         viewModelScope.launch {
             odometerPreferences.setAutoTrackingEnabled(true)
             AutoTrackingService.startService(context, AutoTrackingService.ACTION_START_AUTO_TRACKING)
-            showMessage("Auto Tracking AKTIF • Memantau pergerakan motor otomatis")
+            showMessage("Auto Tracking AKTIF • Memantau pergerakan GPS motor otomatis")
         }
     }
 
@@ -108,20 +110,6 @@ class MotoOdoViewModel(
             AutoTrackingService.stopService(context)
             TelemetryStateHolder.onTrackingStopped()
             showMessage("Auto Tracking DIMATIKAN • Sesi perjalanan disimpan")
-        }
-    }
-
-    fun toggleSimulationMode(context: Context) {
-        val currentlySimulating = telemetryState.value.isSimulationActive
-        if (currentlySimulating) {
-            AutoTrackingService.startService(context, AutoTrackingService.ACTION_STOP_SIMULATION)
-            showMessage("Simulasi Berkendara dihentikan • Perjalanan disimpan ke Riwayat")
-        } else {
-            viewModelScope.launch {
-                odometerPreferences.setAutoTrackingEnabled(true)
-                AutoTrackingService.startService(context, AutoTrackingService.ACTION_START_SIMULATION)
-                showMessage("Mode Simulasi Berkendara dimulai • Menguji Auto Tracking & Notifikasi Live")
-            }
         }
     }
 

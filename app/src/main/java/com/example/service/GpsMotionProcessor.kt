@@ -4,6 +4,7 @@ import com.example.model.GpsAccuracyFilter
 import com.example.model.GpsSignalQuality
 import com.example.model.MotionStatus
 import com.example.model.SensitivityLevel
+import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.max
@@ -17,6 +18,7 @@ data class RawGpsFix(
     val hasSpeed: Boolean,
     val speedMetersPerSec: Float,
     val timestampMillis: Long,
+    val provider: String = "gps",
     val isSimulated: Boolean = false
 )
 
@@ -31,8 +33,10 @@ data class ProcessedMotionResult(
 )
 
 /**
- * Pure, testable GPS movement & anti-drift processor for MOTO ODO.
- * Prevents GPS drift while parked and automatically detects movement start, pause, and resume.
+ * Strict Hardware GPS Movement & Anti-Drift Processor for MOTO ODO.
+ * - Rejects network/Wi-Fi/cell triangulation when GPS is off or inaccurate
+ * - Requires real GPS Doppler velocity when available to block stationary multipath drift
+ * - Rejects stale cached locations and impossible coordinate spikes
  */
 class GpsMotionProcessor {
 
@@ -50,8 +54,7 @@ class GpsMotionProcessor {
         smoothedSpeedKmh = 0f
     }
 
-    fun evaluateSignalQuality(accuracyMeters: Float, isSimulated: Boolean): GpsSignalQuality {
-        if (isSimulated) return GpsSignalQuality.SIMULATED
+    fun evaluateSignalQuality(accuracyMeters: Float): GpsSignalQuality {
         return when {
             accuracyMeters <= 0f -> GpsSignalQuality.NO_SIGNAL
             accuracyMeters <= 8f -> GpsSignalQuality.EXCELLENT
@@ -65,14 +68,29 @@ class GpsMotionProcessor {
         fix: RawGpsFix,
         sensitivity: SensitivityLevel,
         accuracyFilter: GpsAccuracyFilter,
-        calibrationFactor: Float
+        calibrationFactor: Float,
+        nowMillis: Long = fix.timestampMillis
     ): ProcessedMotionResult {
-        val signalQuality = evaluateSignalQuality(fix.accuracyMeters, fix.isSimulated)
+        val signalQuality = evaluateSignalQuality(fix.accuracyMeters)
+
+        // 0. Reject stale cached fixes (older than 12 seconds compared to system clock)
+        if (nowMillis > 0L && abs(nowMillis - fix.timestampMillis) > 12_000L) {
+            return ProcessedMotionResult(
+                acceptedFix = false,
+                deltaDistanceKm = 0.0,
+                deltaMovingDurationSeconds = 0L,
+                currentSpeedKmh = 0f,
+                motionStatus = MotionStatus.STOPPED,
+                signalQuality = signalQuality,
+                statusReason = "Mengabaikan lokasi cache lama • Menunggu sinyal GPS baru"
+            )
+        }
 
         // 1. Filter out poor GPS accuracy
-        if (!fix.isSimulated && (fix.accuracyMeters <= 0f || fix.accuracyMeters > accuracyFilter.maxAccuracyMeters)) {
+        if (fix.accuracyMeters <= 0f || fix.accuracyMeters > accuracyFilter.maxAccuracyMeters) {
             consecutiveStoppedSamples++
             if (consecutiveStoppedSamples >= 2) {
+                consecutiveMovingSamples = 0
                 smoothedSpeedKmh = 0f
             }
             return ProcessedMotionResult(
@@ -82,7 +100,7 @@ class GpsMotionProcessor {
                 currentSpeedKmh = 0f,
                 motionStatus = if (lastValidFix == null) MotionStatus.SEARCHING_GPS else MotionStatus.STOPPED,
                 signalQuality = signalQuality,
-                statusReason = "Akurasi GPS rendah (±${fix.accuracyMeters.toInt()}m), menunggu sinyal stabil"
+                statusReason = "Akurasi GPS rendah (±${fix.accuracyMeters.toInt()}m), menunggu sinyal satelit stabil"
             )
         }
 
@@ -96,13 +114,13 @@ class GpsMotionProcessor {
                 currentSpeedKmh = 0f,
                 motionStatus = MotionStatus.STOPPED,
                 signalQuality = signalQuality,
-                statusReason = "Sinyal GPS terkunci (±${fix.accuracyMeters.toInt()}m) • Siap mendeteksi gerak"
+                statusReason = "Sinyal GPS terkunci (±${fix.accuracyMeters.toInt()}m) • Motor diam (0 KM/JAM)"
             )
         }
 
         // 2. Avoid duplicate or out-of-order timestamps
         val deltaTimeMs = fix.timestampMillis - previous.timestampMillis
-        if (deltaTimeMs <= 150L) {
+        if (deltaTimeMs <= 250L) {
             return ProcessedMotionResult(
                 acceptedFix = false,
                 deltaDistanceKm = 0.0,
@@ -110,7 +128,7 @@ class GpsMotionProcessor {
                 currentSpeedKmh = if (consecutiveMovingSamples >= sensitivity.requiredMovingSamples) smoothedSpeedKmh else 0f,
                 motionStatus = if (consecutiveMovingSamples >= sensitivity.requiredMovingSamples) MotionStatus.MOVING else MotionStatus.STOPPED,
                 signalQuality = signalQuality,
-                statusReason = "Mengabaikan duplikasi pembacaan lokasi"
+                statusReason = "Menunggu interval GPS berikutnya"
             )
         }
 
@@ -122,20 +140,21 @@ class GpsMotionProcessor {
             fix.longitude
         )
 
-        // 3. Calculate coordinate speed and combine with Doppler GPS speed
+        // 3. Calculate coordinate speed and Doppler GPS speed
         val coordSpeedKmh = ((rawDistanceMeters / deltaTimeSec) * 3.6).toFloat()
         val dopplerSpeedKmh = if (fix.hasSpeed && fix.speedMetersPerSec >= 0f) {
             fix.speedMetersPerSec * 3.6f
         } else {
-            coordSpeedKmh
+            -1f
         }
 
-        // 4. Filter impossible GPS spikes / teleportation (> 220 km/h or sudden huge jump with 0 Doppler speed)
-        if (coordSpeedKmh > 220f || (rawDistanceMeters > 250.0 && dopplerSpeedKmh < 3.0f && !fix.isSimulated)) {
-            // Re-anchor reference if time gap was long (> 25s), otherwise ignore spike
-            if (deltaTimeSec > 25.0) {
+        // 4. Filter impossible GPS spikes / cell-tower jumps
+        if (coordSpeedKmh > 200f || (rawDistanceMeters > 150.0 && dopplerSpeedKmh in 0f..2.5f)) {
+            if (deltaTimeSec > 20.0) {
                 lastValidFix = fix
             }
+            consecutiveStoppedSamples++
+            smoothedSpeedKmh = 0f
             return ProcessedMotionResult(
                 acceptedFix = false,
                 deltaDistanceKm = 0.0,
@@ -143,33 +162,32 @@ class GpsMotionProcessor {
                 currentSpeedKmh = 0f,
                 motionStatus = MotionStatus.STOPPED,
                 signalQuality = signalQuality,
-                statusReason = "Lonjakan GPS diabaikan (Anti-Spike Filter)"
+                statusReason = "Lonjakan koordinat diabaikan (Anti-Drift Aktif)"
             )
         }
 
-        // Effective speed combines Doppler and coordinate velocity to avoid stationary drift
-        val effectiveSpeedKmh = if (fix.hasSpeed) {
-            // If Doppler says almost zero (< 1.8 km/h), trust Doppler strongly to block multipath drift
-            if (dopplerSpeedKmh < 1.8f) {
-                dopplerSpeedKmh * 0.7f + coordSpeedKmh * 0.3f
-            } else {
-                dopplerSpeedKmh * 0.65f + coordSpeedKmh * 0.35f
-            }
+        // 5. Strict Stationary Anti-Drift Check:
+        // When real GPS hardware reports Doppler speed (hasSpeed == true), if Doppler speed is below
+        // 2.2 km/h (~0.6 m/s), the phone is physically stationary! Block any coordinate drift.
+        val isPhysicallyStationaryByDoppler = fix.hasSpeed && dopplerSpeedKmh < (sensitivity.minSpeedKmh * 0.65f)
+
+        val effectiveSpeedKmh = if (isPhysicallyStationaryByDoppler) {
+            0f
+        } else if (fix.hasSpeed && dopplerSpeedKmh >= 0f) {
+            // Blend 75% Doppler satellite speed + 25% Haversine coordinate speed
+            dopplerSpeedKmh * 0.75f + coordSpeedKmh * 0.25f
         } else {
             coordSpeedKmh
         }
 
-        // Anti-drift radius check: displacement must exceed both sensitivity step AND a fraction of GPS error radius
-        val driftThresholdMeters = if (fix.isSimulated) {
-            sensitivity.minStepDistanceMeters.toDouble()
-        } else {
-            max(
-                sensitivity.minStepDistanceMeters.toDouble(),
-                (fix.accuracyMeters * 0.28f).toDouble()
-            )
-        }
+        // Displacement must exceed both minimum step distance AND 35% of GPS horizontal uncertainty radius
+        val driftThresholdMeters = max(
+            sensitivity.minStepDistanceMeters.toDouble(),
+            (fix.accuracyMeters * 0.35f).toDouble()
+        )
 
-        val isSampleMoving = effectiveSpeedKmh >= sensitivity.minSpeedKmh &&
+        val isSampleMoving = !isPhysicallyStationaryByDoppler &&
+            effectiveSpeedKmh >= sensitivity.minSpeedKmh &&
             rawDistanceMeters >= driftThresholdMeters
 
         return if (isSampleMoving) {
@@ -197,10 +215,9 @@ class GpsMotionProcessor {
                     currentSpeedKmh = smoothedSpeedKmh,
                     motionStatus = MotionStatus.MOVING,
                     signalQuality = signalQuality,
-                    statusReason = "Motor bergerak • Mencatat jarak otomatis"
+                    statusReason = "Motor berjalan • Mencatat jarak GPS otomatis"
                 )
             } else {
-                // First moving sample: anchor position and wait for confirmation sample
                 ProcessedMotionResult(
                     acceptedFix = true,
                     deltaDistanceKm = 0.0,
@@ -208,7 +225,7 @@ class GpsMotionProcessor {
                     currentSpeedKmh = 0f,
                     motionStatus = MotionStatus.STOPPED,
                     signalQuality = signalQuality,
-                    statusReason = "Memvalidasi awal pergerakan motor..."
+                    statusReason = "Memvalidasi pergerakan GPS satelit..."
                 )
             }
         } else {
@@ -217,7 +234,6 @@ class GpsMotionProcessor {
                 consecutiveMovingSamples = 0
                 smoothedSpeedKmh = 0f
             }
-            // Only update anchor if accuracy improved so slow walking/drift doesn't creep
             if (fix.accuracyMeters < previous.accuracyMeters) {
                 lastValidFix = fix
             }
@@ -228,15 +244,12 @@ class GpsMotionProcessor {
                 currentSpeedKmh = 0f,
                 motionStatus = MotionStatus.STOPPED,
                 signalQuality = signalQuality,
-                statusReason = "Motor berhenti • Anti-GPS drift aktif"
+                statusReason = "Motor berhenti (0 KM/JAM) • Anti-GPS drift aktif"
             )
         }
     }
 
-    /**
-     * Called periodically by watchdog timer in case GPS callbacks pause when completely still.
-     */
-    fun checkWatchdogIdle(nowMillis: Long, idleTimeoutMs: Long = 5500L): Boolean {
+    fun checkWatchdogIdle(nowMillis: Long, idleTimeoutMs: Long = 4500L): Boolean {
         if (lastMovementTimestampMs > 0L && (nowMillis - lastMovementTimestampMs) > idleTimeoutMs) {
             consecutiveMovingSamples = 0
             smoothedSpeedKmh = 0f

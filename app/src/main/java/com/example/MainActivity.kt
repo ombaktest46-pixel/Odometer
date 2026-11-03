@@ -273,7 +273,7 @@ fun MotoOdoMainApp(viewModel: MotoOdoViewModel) {
                     hasLocationPermission = hasLocationPermission,
                     onRequestPermissionsAndStart = requestPermissionsAndStartTracking,
                     onStopAutoTracking = { viewModel.stopAutoTracking(context) },
-                    onToggleSimulation = { viewModel.toggleSimulationMode(context) },
+                    onOpenLocationSettings = { openLocationSourceSettings(context) },
                     onResetTrip = { viewModel.resetTripOdometer(context) },
                     onOpenHistoryTab = { currentTab = MotoOdoTab.HISTORY },
                     modifier = Modifier.padding(innerPadding)
@@ -287,10 +287,7 @@ fun MotoOdoMainApp(viewModel: MotoOdoViewModel) {
                     speedUnit = settingsState.speedUnit,
                     onDeleteTrip = { id -> viewModel.deleteSingleTrip(id) },
                     onDeleteAllTrips = { viewModel.deleteAllTripsHistory() },
-                    onStartSimulationFromEmpty = {
-                        viewModel.toggleSimulationMode(context)
-                        currentTab = MotoOdoTab.DASHBOARD
-                    },
+                    onStartSimulationFromEmpty = {},
                     modifier = Modifier.padding(innerPadding)
                 )
             }
@@ -394,6 +391,15 @@ private fun checkBackgroundLocationPermission(context: Context): Boolean {
         ) == PackageManager.PERMISSION_GRANTED
     } else {
         true
+    }
+}
+
+private fun openLocationSourceSettings(context: Context) {
+    runCatching {
+        val intent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        context.startActivity(intent)
     }
 }
 

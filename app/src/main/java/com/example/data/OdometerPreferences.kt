@@ -60,6 +60,25 @@ class OdometerPreferences(private val dataStore: DataStore<Preferences>) {
         val KEY_SPEED_UNIT = stringPreferencesKey("speed_unit")
         val KEY_CALIBRATION_FACTOR = floatPreferencesKey("calibration_factor")
         val KEY_NOTIFICATIONS_ENABLED = booleanPreferencesKey("notifications_enabled")
+        val KEY_SIMULATION_CLEANED_V2 = booleanPreferencesKey("simulation_cleaned_v2")
+    }
+
+    suspend fun cleanUpSimulationResidueOnce() {
+        dataStore.edit { prefs ->
+            val alreadyCleaned = prefs[KEY_SIMULATION_CLEANED_V2] ?: false
+            if (!alreadyCleaned) {
+                prefs[KEY_TOTAL_ODOMETER_KM] = 0.0
+                prefs[KEY_TRIP_ODOMETER_KM] = 0.0
+                prefs[KEY_TRIP_DURATION_SECONDS] = 0L
+                prefs[KEY_TRIP_MAX_SPEED_KMH] = 0f
+                prefs[KEY_ACTIVE_SESSION_DIST_KM] = 0.0
+                prefs[KEY_ACTIVE_SESSION_DURATION_SEC] = 0L
+                prefs[KEY_ACTIVE_SESSION_START_MS] = 0L
+                prefs[KEY_ACTIVE_SESSION_MAX_SPEED] = 0f
+                prefs[KEY_ACTIVE_SESSION_ROUTE_JSON] = "[]"
+                prefs[KEY_SIMULATION_CLEANED_V2] = true
+            }
+        }
     }
 
     val persistedDataFlow: Flow<PersistedOdometerData> = dataStore.data.map { prefs ->

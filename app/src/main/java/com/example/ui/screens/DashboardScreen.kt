@@ -20,15 +20,15 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
+import androidx.compose.material.icons.filled.GpsFixed
+import androidx.compose.material.icons.filled.GpsOff
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.NotificationsActive
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Timer
-import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -50,6 +50,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.LiveTelemetryState
@@ -77,7 +78,7 @@ fun DashboardScreen(
     hasLocationPermission: Boolean,
     onRequestPermissionsAndStart: () -> Unit,
     onStopAutoTracking: () -> Unit,
-    onToggleSimulation: () -> Unit,
+    onOpenLocationSettings: () -> Unit,
     onResetTrip: () -> Unit,
     onOpenHistoryTab: () -> Unit,
     modifier: Modifier = Modifier
@@ -105,7 +106,7 @@ fun DashboardScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = "MOTO ODO",
@@ -147,45 +148,81 @@ fun DashboardScreen(
                         )
                     }
 
-                    // Indoor Ride Simulation Quick Button
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    // Hardware GPS Status Pill (Opens System Location Settings when tapped)
+                    val gpsOn = telemetryState.isGpsHardwareEnabled
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .clip(RoundedCornerShape(50))
                             .background(
-                                if (telemetryState.isSimulationActive) {
-                                    CyberCyan.copy(alpha = 0.2f)
-                                } else {
-                                    PanelElevatedGray
-                                }
+                                if (gpsOn) NeonGreen.copy(alpha = 0.15f) else CrimsonRed.copy(alpha = 0.18f)
                             )
                             .border(
                                 1.dp,
-                                if (telemetryState.isSimulationActive) CyberCyan else PanelBorderGray,
+                                if (gpsOn) NeonGreen else CrimsonRed,
                                 RoundedCornerShape(50)
                             )
-                            .clickable { onToggleSimulation() }
+                            .clickable { onOpenLocationSettings() }
                             .padding(horizontal = 12.dp, vertical = 8.dp)
-                            .testTag("btn_toggle_simulation")
+                            .testTag("btn_gps_hardware_status")
                     ) {
                         Icon(
-                            imageVector = if (telemetryState.isSimulationActive) Icons.Default.Stop else Icons.Default.PlayArrow,
-                            contentDescription = "Mode Simulasi Berkendara",
-                            tint = if (telemetryState.isSimulationActive) CyberCyan else NeonGreen,
+                            imageVector = if (gpsOn) Icons.Default.GpsFixed else Icons.Default.GpsOff,
+                            contentDescription = "Status Sensor GPS HP",
+                            tint = if (gpsOn) NeonGreen else CrimsonRed,
                             modifier = Modifier.size(16.dp)
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
+                        Spacer(modifier = Modifier.width(5.dp))
                         Text(
-                            text = if (telemetryState.isSimulationActive) "STOP UJI" else "SIMULASI",
+                            text = if (gpsOn) "GPS AKTIF" else "GPS MATI",
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (telemetryState.isSimulationActive) CyberCyan else TextPrimaryWhite
+                            color = if (gpsOn) NeonGreen else CrimsonRed
                         )
                     }
                 }
             }
 
-            // 2. GPS / Permission Alert Banner if needed
-            if (!hasLocationPermission && !telemetryState.isSimulationActive) {
+            // 2A. GPS Hardware Disabled Alert Banner
+            if (!telemetryState.isGpsHardwareEnabled) {
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(CrimsonRed.copy(alpha = 0.14f))
+                            .border(1.dp, CrimsonRed.copy(alpha = 0.6f), RoundedCornerShape(14.dp))
+                            .clickable { onOpenLocationSettings() }
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.GpsOff,
+                            contentDescription = "GPS HP Sedang Mati",
+                            tint = CrimsonRed,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Sensor Lokasi GPS HP Sedang Mati",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = CrimsonRed
+                            )
+                            Text(
+                                text = "Speedometer & Odometer dikunci pada 0 KM/JAM. Ketuk di sini untuk menyalakan GPS perangkat.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontSize = 12.sp,
+                                color = TextPrimaryWhite
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 2B. Permission Alert Banner if needed
+            if (!hasLocationPermission) {
                 item {
                     Row(
                         modifier = Modifier
@@ -229,7 +266,7 @@ fun DashboardScreen(
                     gpsSignalQuality = telemetryState.gpsSignalQuality,
                     gpsAccuracyMeters = telemetryState.gpsAccuracyMeters,
                     speedUnit = unit,
-                    isSimulationActive = telemetryState.isSimulationActive
+                    isSimulationActive = false
                 )
             }
 
@@ -265,7 +302,7 @@ fun DashboardScreen(
                         modifier = Modifier.weight(1f)
                     )
                     TelemetryMetricCard(
-                        icon = Icons.Default.TrendingUp,
+                        icon = Icons.AutoMirrored.Filled.TrendingUp,
                         label = "KEC. MAKS",
                         value = TelemetryFormatter.formatSpeedOneDecimal(telemetryState.maxSpeedKmh, unit.multiplier),
                         unitLabel = unit.symbol,
@@ -276,7 +313,7 @@ fun DashboardScreen(
             }
 
             // 6. Live Background Notification Mirror Banner
-            if (telemetryState.isAutoTrackingEnabled || telemetryState.isSimulationActive) {
+            if (telemetryState.isAutoTrackingEnabled) {
                 item {
                     LiveNotificationStatusCard(
                         telemetryState = telemetryState,
@@ -285,10 +322,7 @@ fun DashboardScreen(
                 }
             }
 
-            // 7. Primary Action Buttons:
-            // - AKTIFKAN AUTO TRACKING / MATIKAN AUTO TRACKING
-            // - RESET TRIP
-            // - RIWAYAT PERJALANAN
+            // 7. Primary Action Buttons
             item {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -458,7 +492,7 @@ private fun TelemetryMetricCard(
             .clip(RoundedCornerShape(16.dp))
             .background(PanelDarkGray)
             .border(1.dp, PanelBorderGray, RoundedCornerShape(16.dp))
-            .padding(12.dp),
+            .padding(horizontal = 10.dp, vertical = 12.dp),
         horizontalAlignment = Alignment.Start
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -466,12 +500,15 @@ private fun TelemetryMetricCard(
                 imageVector = icon,
                 contentDescription = label,
                 tint = accentColor,
-                modifier = Modifier.size(15.dp)
+                modifier = Modifier.size(14.dp)
             )
-            Spacer(modifier = Modifier.width(5.dp))
+            Spacer(modifier = Modifier.width(4.dp))
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
+                fontSize = 9.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 color = TextSecondarySilver
             )
         }
@@ -480,13 +517,18 @@ private fun TelemetryMetricCard(
             text = value,
             fontFamily = OrbitronFontFamily,
             fontWeight = FontWeight.Bold,
-            fontSize = 17.sp,
+            fontSize = 14.sp,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Clip,
             color = TextPrimaryWhite
         )
+        Spacer(modifier = Modifier.height(2.dp))
         Text(
             text = unitLabel,
             style = MaterialTheme.typography.labelSmall,
             fontSize = 9.sp,
+            maxLines = 1,
             color = accentColor
         )
     }
@@ -528,10 +570,10 @@ private fun LiveNotificationStatusCard(
                 style = MaterialTheme.typography.labelMedium,
                 color = NeonGreen
             )
-            val statusStr = if (telemetryState.motionStatus == MotionStatus.MOVING) {
-                "● MOTOR BERJALAN"
-            } else {
-                "● MOTOR BERHENTI"
+            val statusStr = when {
+                !telemetryState.isGpsHardwareEnabled -> "● GPS MATI"
+                telemetryState.motionStatus == MotionStatus.MOVING -> "● MOTOR BERJALAN"
+                else -> "● MOTOR BERHENTI"
             }
             Text(
                 text = "ODO: ${TelemetryFormatter.formatOdometer(telemetryState.totalOdometerKm, speedUnit.multiplier)} ${speedUnit.distanceSymbol} • " +

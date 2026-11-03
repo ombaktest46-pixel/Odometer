@@ -50,12 +50,10 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.Locale
-import kotlin.math.cos
-import kotlin.math.sin
 
 /**
- * Foreground Location Service that powers MOTO ODO:
- * - Continuously monitors GPS in background and when screen is off
+ * 100% Real Hardware GPS Foreground Location Service for MOTO ODO:
+ * - Uses only real GPS satellite fixes (blocks movement when GPS is disabled or in Airplane Mode without GPS)
  * - Automatically detects motorcycle moving, stopping, and resuming without pressing START
  * - Updates Permanent Total Odometer & Trip Odometer in DataStore
  * - Updates single persistent Notification ("MOTO ODO 🏍️") in real-time
@@ -69,11 +67,8 @@ class AutoTrackingService : Service() {
 
         const val ACTION_START_AUTO_TRACKING = "com.example.action.START_AUTO_TRACKING"
         const val ACTION_STOP_AUTO_TRACKING = "com.example.action.STOP_AUTO_TRACKING"
-        const val ACTION_START_SIMULATION = "com.example.action.START_SIMULATION"
-        const val ACTION_STOP_SIMULATION = "com.example.action.STOP_SIMULATION"
         const val ACTION_SAVE_CURRENT_RIDE_NOW = "com.example.action.SAVE_CURRENT_RIDE_NOW"
 
-        // Automatically finalize and save a trip to history after 45s of continuous parking
         private const val AUTO_PARK_SAVE_TIMEOUT_MS = 45_000L
         private const val MIN_TRIP_DISTANCE_TO_SAVE_KM = 0.02
 
@@ -108,7 +103,6 @@ class AutoTrackingService : Service() {
     private var currentSettings = SettingsState()
     private var currentPowerMode: PowerMode? = null
     private var isLocationUpdatesRegistered = false
-    private var simulationJob: Job? = null
     private var watchdogJob: Job? = null
 
     // Active ride session tracking (automatically started on movement, saved on park)
@@ -118,20 +112,49 @@ class AutoTrackingService : Service() {
     private var activeSessionMaxSpeedKmh: Float = 0f
     private val activeRoutePoints = ArrayList<RoutePoint>()
     private var lastMovingTimestampMs: Long = 0L
-    private var activeSessionSimulated: Boolean = false
 
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
-            if (simulationJob?.isActive == true) return
             val location: Location = result.lastLocation ?: return
+
+            // Strictly verify GPS hardware is enabled before accepting any location fix
+            if (!isGpsProviderEnabled()) {
+                motionProcessor.reset()
+                TelemetryStateHolder.updateState {
+                    it.copy(
+                        isGpsHardwareEnabled = false,
+                        isSimulationActive = false,
+                        currentSpeedKmh = 0f,
+                        motionStatus = MotionStatus.SEARCHING_GPS,
+                        gpsSignalQuality = GpsSignalQuality.NO_SIGNAL,
+                        statusDetailMessage = "GPS HP mati • Nyalakan GPS agar odometer bekerja"
+                    )
+                }
+                updateNotificationNow()
+                return
+            }
+
+            // Ignore mock locations
+            @Suppress("DEPRECATION")
+            val isMock = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                location.isMock
+            } else {
+                location.isFromMockProvider
+            }
+            if (isMock) return
+
+            // Require accurate satellite fix or high-accuracy fused fix with Doppler speed
+            if (!location.hasAccuracy() || location.accuracy <= 0f) return
+
             handleIncomingFix(
                 RawGpsFix(
                     latitude = location.latitude,
                     longitude = location.longitude,
-                    accuracyMeters = if (location.hasAccuracy()) location.accuracy else 15f,
+                    accuracyMeters = location.accuracy,
                     hasSpeed = location.hasSpeed(),
                     speedMetersPerSec = if (location.hasSpeed()) location.speed else 0f,
                     timestampMillis = if (location.time > 0L) location.time else System.currentTimeMillis(),
+                    provider = location.provider ?: "gps",
                     isSimulated = false
                 )
             )
@@ -164,8 +187,8 @@ class AutoTrackingService : Service() {
             )
         }
 
-        // Restore any unfinished session if service was restarted by Android OS
         serviceScope.launch {
+            odometerPreferences.cleanUpSimulationResidueOnce()
             val snapshot = odometerPreferences.getSnapshot()
             currentSettings = snapshot.settings
             if (snapshot.activeSessionDistanceKm >= MIN_TRIP_DISTANCE_TO_SAVE_KM && snapshot.activeSessionStartMillis > 0L) {
@@ -183,10 +206,10 @@ class AutoTrackingService : Service() {
                 tripMaxSpeed = snapshot.tripMaxSpeedKmh,
                 isAutoTracking = true
             )
+            checkGpsHardwareStatus()
             updateNotificationNow()
         }
 
-        // Reactively observe settings changes (e.g. calibration, sensitivity, power mode, unit)
         serviceScope.launch {
             odometerPreferences.persistedDataFlow.collectLatest { persisted ->
                 val oldPowerMode = currentPowerMode
@@ -203,7 +226,8 @@ class AutoTrackingService : Service() {
                         tripOdometerKm = persisted.tripOdometerKm,
                         tripDurationSeconds = persisted.tripDurationSeconds,
                         avgSpeedKmh = avgSpd,
-                        maxSpeedKmh = maxOf(state.maxSpeedKmh, persisted.tripMaxSpeedKmh)
+                        maxSpeedKmh = maxOf(state.maxSpeedKmh, persisted.tripMaxSpeedKmh),
+                        isSimulationActive = false
                     )
                 }
                 if (isLocationUpdatesRegistered && oldPowerMode != persisted.settings.powerMode) {
@@ -223,7 +247,6 @@ class AutoTrackingService : Service() {
         when (action) {
             ACTION_STOP_AUTO_TRACKING -> {
                 serviceScope.launch {
-                    stopSimulationInternal()
                     finalizeAndSaveActiveRideIfEligible()
                     odometerPreferences.setAutoTrackingEnabled(false)
                     unregisterGpsUpdates()
@@ -232,24 +255,6 @@ class AutoTrackingService : Service() {
                     stopSelf()
                 }
                 return START_NOT_STICKY
-            }
-
-            ACTION_START_SIMULATION -> {
-                promoteToForeground()
-                serviceScope.launch {
-                    odometerPreferences.setAutoTrackingEnabled(true)
-                    startSimulationInternal()
-                }
-            }
-
-            ACTION_STOP_SIMULATION -> {
-                serviceScope.launch {
-                    stopSimulationInternal()
-                    finalizeAndSaveActiveRideIfEligible()
-                    checkGpsHardwareStatus()
-                    registerGpsUpdates(currentSettings.powerMode)
-                    updateNotificationNow()
-                }
             }
 
             ACTION_SAVE_CURRENT_RIDE_NOW -> {
@@ -285,8 +290,7 @@ class AutoTrackingService : Service() {
             } else {
                 startForeground(NOTIFICATION_ID, notification)
             }
-        } catch (e: Exception) {
-            // If location permission wasn't granted yet when invoked, update state gracefully
+        } catch (_: Exception) {
             TelemetryStateHolder.updateState {
                 it.copy(
                     motionStatus = MotionStatus.SEARCHING_GPS,
@@ -315,7 +319,7 @@ class AutoTrackingService : Service() {
 
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, powerMode.intervalMs)
             .setMinUpdateIntervalMillis(powerMode.minUpdateIntervalMs)
-            .setWaitForAccurateLocation(false)
+            .setWaitForAccurateLocation(true)
             .build()
 
         runCatching {
@@ -338,11 +342,13 @@ class AutoTrackingService : Service() {
 
     private fun handleIncomingFix(fix: RawGpsFix) {
         serviceScope.launch {
+            val nowMs = System.currentTimeMillis()
             val result = motionProcessor.processFix(
                 fix = fix,
                 sensitivity = currentSettings.sensitivityLevel,
                 accuracyFilter = currentSettings.gpsAccuracyFilter,
-                calibrationFactor = currentSettings.calibrationFactor
+                calibrationFactor = currentSettings.calibrationFactor,
+                nowMillis = nowMs
             )
 
             if (result.motionStatus == MotionStatus.MOVING && result.deltaDistanceKm > 0.0) {
@@ -353,7 +359,6 @@ class AutoTrackingService : Service() {
                     activeSessionDurationSec = 0L
                     activeSessionMaxSpeedKmh = 0f
                     activeRoutePoints.clear()
-                    activeSessionSimulated = fix.isSimulated
                 }
 
                 lastMovingTimestampMs = now
@@ -388,7 +393,8 @@ class AutoTrackingService : Service() {
             TelemetryStateHolder.updateState { current ->
                 current.copy(
                     isAutoTrackingEnabled = true,
-                    isSimulationActive = fix.isSimulated,
+                    isSimulationActive = false,
+                    isGpsHardwareEnabled = true,
                     currentSpeedKmh = result.currentSpeedKmh,
                     motionStatus = result.motionStatus,
                     gpsSignalQuality = result.signalQuality,
@@ -406,18 +412,31 @@ class AutoTrackingService : Service() {
         }
     }
 
-    /**
-     * Watchdog loop runs every 2 seconds to:
-     * 1. Reset speed to 0 KM/JAM and status to MOTOR BERHENTI if no movement fixes arrive
-     * 2. Auto-save the active ride to Room Database if the motorcycle has been parked for >= 45s
-     */
     private fun startWatchdogLoop() {
         watchdogJob?.cancel()
         watchdogJob = serviceScope.launch {
             while (isActive) {
                 delay(2000L)
+                val gpsEnabled = isGpsProviderEnabled()
+                if (!gpsEnabled) {
+                    motionProcessor.reset()
+                    TelemetryStateHolder.updateState { state ->
+                        state.copy(
+                            isGpsHardwareEnabled = false,
+                            isSimulationActive = false,
+                            currentSpeedKmh = 0f,
+                            gpsAccuracyMeters = 0f,
+                            motionStatus = MotionStatus.SEARCHING_GPS,
+                            gpsSignalQuality = GpsSignalQuality.NO_SIGNAL,
+                            statusDetailMessage = "GPS HP sedang mati • Aktifkan lokasi GPS"
+                        )
+                    }
+                    updateNotificationNow()
+                    continue
+                }
+
                 val now = System.currentTimeMillis()
-                val becameIdle = motionProcessor.checkWatchdogIdle(now, idleTimeoutMs = 5000L)
+                val becameIdle = motionProcessor.checkWatchdogIdle(now, idleTimeoutMs = 4500L)
                 if (becameIdle) {
                     TelemetryStateHolder.updateState { state ->
                         if (state.isAutoTrackingEnabled && state.motionStatus == MotionStatus.MOVING) {
@@ -486,7 +505,7 @@ class AutoTrackingService : Service() {
                 startCoordLabel = startLabel,
                 endCoordLabel = endLabel,
                 routePointsJson = RouteJsonCodec.encodeRoutePoints(activeRoutePoints),
-                isSimulated = activeSessionSimulated
+                isSimulated = false
             )
             tripRepository.insertTrip(tripEntity)
         }
@@ -500,104 +519,37 @@ class AutoTrackingService : Service() {
         odometerPreferences.clearActiveSessionState()
     }
 
-    /**
-     * Realistic Indoor Ride Simulation Mode so the user can test Auto Tracking,
-     * Speedometer, Odometer accumulation, Red-light Auto-Stop, Auto-Resume, and
-     * Live Notification even while indoors.
-     */
-    private fun startSimulationInternal() {
-        if (simulationJob?.isActive == true) return
-        motionProcessor.reset()
-
-        simulationJob = serviceScope.launch {
-            var simLat = -6.200000 // Central Jakarta reference coordinate
-            var simLng = 106.816666
-            var headingRad = 0.45
-            var tick = 0
-
-            while (isActive) {
-                // Realistic motorcycle speed profile:
-                // Ticks 0..2: Starting engine / stationary (0 km/h)
-                // Ticks 3..14: Accelerating & cruising (32 -> 68 km/h)
-                // Ticks 15..20: Stopping at traffic light (0 km/h -> MOTOR BERHENTI)
-                // Ticks 21..35: Resuming automatically & spirited ride (42 -> 78 km/h)
-                val cycleTick = tick % 36
-                val targetSpeedKmh: Float = when (cycleTick) {
-                    in 0..2 -> 0f
-                    in 3..6 -> 28f + (cycleTick - 3) * 8f
-                    in 7..14 -> 58f + ((cycleTick % 3) * 4f)
-                    in 15..20 -> 0f // Traffic light stop!
-                    in 21..25 -> 34f + (cycleTick - 21) * 7f
-                    else -> 64f + ((cycleTick % 4) * 3.5f)
-                }
-
-                val speedMps = targetSpeedKmh / 3.6f
-                // Curve heading gently to create a realistic winding route on the vector map
-                headingRad += sin(tick * 0.18) * 0.09
-                val distanceMeters = speedMps * 1.0 // 1-second simulation steps
-
-                val deltaLat = (distanceMeters * cos(headingRad)) / 111320.0
-                val deltaLng = (distanceMeters * sin(headingRad)) / (111320.0 * cos(Math.toRadians(simLat)))
-
-                simLat += deltaLat
-                simLng += deltaLng
-
-                handleIncomingFix(
-                    RawGpsFix(
-                        latitude = simLat,
-                        longitude = simLng,
-                        accuracyMeters = 4.5f,
-                        hasSpeed = true,
-                        speedMetersPerSec = speedMps,
-                        timestampMillis = System.currentTimeMillis(),
-                        isSimulated = true
-                    )
-                )
-
-                tick++
-                delay(1000L)
-            }
-        }
-    }
-
-    private fun stopSimulationInternal() {
-        simulationJob?.cancel()
-        simulationJob = null
-        motionProcessor.reset()
-        TelemetryStateHolder.updateState {
-            it.copy(
-                isSimulationActive = false,
-                currentSpeedKmh = 0f,
-                motionStatus = if (it.isAutoTrackingEnabled) MotionStatus.STOPPED else MotionStatus.TRACKING_OFF,
-                gpsSignalQuality = GpsSignalQuality.NO_SIGNAL,
-                statusDetailMessage = "Mode simulasi dihentikan • Kembali ke sensor GPS asli"
-            )
-        }
+    private fun isGpsProviderEnabled(): Boolean {
+        val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        return runCatching {
+            lm.isProviderEnabled(LocationManager.GPS_PROVIDER)
+        }.getOrDefault(false)
     }
 
     private fun checkGpsHardwareStatus() {
-        val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-        val isGpsEnabled = runCatching {
-            lm.isProviderEnabled(LocationManager.GPS_PROVIDER)
-        }.getOrDefault(false)
-
+        val isGpsEnabled = isGpsProviderEnabled()
         TelemetryStateHolder.updateState { current ->
-            if (!isGpsEnabled && !current.isSimulationActive) {
+            if (!isGpsEnabled) {
+                motionProcessor.reset()
                 current.copy(
                     isGpsHardwareEnabled = false,
+                    isSimulationActive = false,
                     currentSpeedKmh = 0f,
+                    gpsAccuracyMeters = 0f,
                     motionStatus = MotionStatus.SEARCHING_GPS,
                     gpsSignalQuality = GpsSignalQuality.NO_SIGNAL,
-                    statusDetailMessage = "GPS HP sedang mati • Aktifkan lokasi agar Auto Tracking bekerja"
+                    statusDetailMessage = "GPS HP sedang mati • Aktifkan lokasi GPS agar Auto Tracking bekerja"
                 )
             } else {
                 current.copy(
                     isGpsHardwareEnabled = true,
-                    statusDetailMessage = if (current.motionStatus == MotionStatus.SEARCHING_GPS) {
-                        "GPS aktif • Memantau pergerakan motor otomatis"
+                    isSimulationActive = false,
+                    motionStatus = if (current.motionStatus == MotionStatus.TRACKING_OFF) {
+                        MotionStatus.STOPPED
                     } else {
-                        current.statusDetailMessage
-                    }
+                        current.motionStatus
+                    },
+                    statusDetailMessage = "GPS aktif • Memantau pergerakan motor otomatis"
                 )
             }
         }
@@ -621,7 +573,7 @@ class AutoTrackingService : Service() {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 getString(R.string.notif_channel_name),
-                NotificationManager.IMPORTANCE_LOW // Silent real-time updates without annoying sound/vibration every second
+                NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = getString(R.string.notif_channel_desc)
                 setShowBadge(false)
@@ -638,14 +590,13 @@ class AutoTrackingService : Service() {
         val speedFormatted = TelemetryFormatter.formatSpeedInt(state.currentSpeedKmh, unit.multiplier)
 
         val statusText = when {
-            !state.isGpsHardwareEnabled && !state.isSimulationActive -> "● GPS MATI (MENUNGGU GPS)"
+            !state.isGpsHardwareEnabled -> "● GPS MATI (MENUNGGU GPS)"
             state.motionStatus == MotionStatus.MOVING -> "● MOTOR BERJALAN"
             state.motionStatus == MotionStatus.STOPPED -> "● MOTOR BERHENTI"
             state.motionStatus == MotionStatus.SEARCHING_GPS -> "● MENCARI SINYAL GPS"
-            else -> "● SIAGA"
+            else -> "● MOTOR BERHENTI"
         }
 
-        // Exact format requested by user for live notification:
         val bigTextBody = buildString {
             appendLine("TOTAL ODOMETER")
             appendLine("$totalFormatted ${unit.distanceSymbol}")
@@ -713,7 +664,7 @@ class AutoTrackingService : Service() {
     private fun updateNotificationNow() {
         if (!currentSettings.notificationsEnabled) return
         val state = TelemetryStateHolder.telemetryState.value
-        if (!state.isAutoTrackingEnabled && !state.isSimulationActive) return
+        if (!state.isAutoTrackingEnabled) return
         runCatching {
             notificationManager.notify(NOTIFICATION_ID, buildLiveNotification(state))
         }
@@ -727,14 +678,13 @@ class AutoTrackingService : Service() {
                 "MotoOdo::AutoTrackingWakeLock"
             ).apply {
                 setReferenceCounted(false)
-                acquire(6 * 60 * 60 * 1000L) // 6-hour safety cap, renewed on start
+                acquire(6 * 60 * 60 * 1000L)
             }
         }
     }
 
     override fun onDestroy() {
         watchdogJob?.cancel()
-        simulationJob?.cancel()
         unregisterGpsUpdates()
         runCatching { unregisterReceiver(gpsProviderReceiver) }
         runCatching {
