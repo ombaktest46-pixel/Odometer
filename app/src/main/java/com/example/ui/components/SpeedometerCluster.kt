@@ -520,19 +520,26 @@ fun SquareCircularOdometerWidgetPreview(
     widgetTheme: WidgetThemeStyle,
     isMoving: Boolean,
     isTrackingActive: Boolean = true,
+    isGpsEnabled: Boolean = true,
     onTogglePowerClick: () -> Unit = {},
+    onEnableGpsClick: () -> Unit = onTogglePowerClick,
     sizeDp: Dp = 212.dp,
     modifier: Modifier = Modifier
 ) {
     val odoStr = TelemetryFormatter.formatOdometer(totalOdometerKm, speedUnit.multiplier)
     val tripStr = "Trip ${TelemetryFormatter.formatOdometerHighPrecision(tripOdometerKm, speedUnit.multiplier)} ${speedUnit.distanceSymbol}"
-    val ringColor = if (isTrackingActive) {
-        Color(widgetTheme.ringColorHex)
-    } else {
-        Color.White.copy(alpha = 0.45f)
-    }
+    val isGpsWarning = isTrackingActive && !isGpsEnabled
+
     val activeGreen = Color(0xFF20B978)
     val activeGreenBright = Color(0xFF4ADE80)
+    val warningRed = Color(0xFFE5484D)
+    val warningRedLight = Color(0xFFFCA5A5)
+
+    val ringColor = when {
+        isGpsWarning -> Color(0xFFF16B70)
+        isTrackingActive -> Color(widgetTheme.ringColorHex)
+        else -> Color.White.copy(alpha = 0.45f)
+    }
 
     val targetOdoProgress = TelemetryFormatter.calculateOdometerRingProgress(
         km = totalOdometerKm,
@@ -563,18 +570,34 @@ fun SquareCircularOdometerWidgetPreview(
             )
             .border(
                 width = if (isTrackingActive) 2.2.dp else 1.dp,
-                color = if (isTrackingActive) activeGreen else Color.White.copy(alpha = 0.22f),
+                color = when {
+                    isGpsWarning -> warningRed
+                    isTrackingActive -> activeGreen
+                    else -> Color.White.copy(alpha = 0.22f)
+                },
                 shape = RoundedCornerShape(34.dp)
             )
-            .clickable { onTogglePowerClick() }
+            .clickable {
+                if (isGpsWarning) {
+                    onEnableGpsClick()
+                } else {
+                    onTogglePowerClick()
+                }
+            }
             .testTag("widget_odo_interactive_card")
     ) {
-        // Standby dim overlay when Auto Tracking is OFF so ON vs OFF is immediately obvious
+        // Standby dim overlay when Auto Tracking is OFF, or subtle red alert tint when GPS is OFF
         if (!isTrackingActive) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color(0xFF0A0C12).copy(alpha = 0.34f))
+            )
+        } else if (isGpsWarning) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFFB41822).copy(alpha = 0.18f))
             )
         }
 
@@ -595,7 +618,11 @@ fun SquareCircularOdometerWidgetPreview(
                     .background(Color(0xFF0F131A).copy(alpha = 0.62f))
                     .border(
                         width = 1.dp,
-                        color = if (isTrackingActive) activeGreen else Color.White.copy(alpha = 0.38f),
+                        color = when {
+                            isGpsWarning -> warningRed
+                            isTrackingActive -> activeGreen
+                            else -> Color.White.copy(alpha = 0.38f)
+                        },
                         shape = RoundedCornerShape(50)
                     )
                     .clickable { onTogglePowerClick() }
@@ -630,8 +657,11 @@ fun SquareCircularOdometerWidgetPreview(
                     modifier = Modifier
                         .clip(RoundedCornerShape(50))
                         .background(
-                            if (isTrackingActive) Color(0xFF16A36A)
-                            else Color.Transparent
+                            when {
+                                isGpsWarning -> warningRed
+                                isTrackingActive -> Color(0xFF16A36A)
+                                else -> Color.Transparent
+                            }
                         )
                         .padding(horizontal = 7.dp, vertical = 2.dp)
                 ) {
@@ -654,18 +684,25 @@ fun SquareCircularOdometerWidgetPreview(
                 }
             }
 
-            // Top-Right Status Indicator Badge (NYALA / JALAN / MATI)
+            // Top-Right Status Indicator Badge (GPS MATI / JALAN / NYALA / MATI)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
                     .background(
-                        if (isTrackingActive) Color(0xFF102A20).copy(alpha = 0.72f)
-                        else Color(0xFF0F131A).copy(alpha = 0.55f)
+                        when {
+                            isGpsWarning -> Color(0xFF441016).copy(alpha = 0.82f)
+                            isTrackingActive -> Color(0xFF102A20).copy(alpha = 0.72f)
+                            else -> Color(0xFF0F131A).copy(alpha = 0.55f)
+                        }
                     )
                     .border(
                         width = 1.dp,
-                        color = if (isTrackingActive) activeGreen else Color.White.copy(alpha = 0.28f),
+                        color = when {
+                            isGpsWarning -> warningRed
+                            isTrackingActive -> activeGreen
+                            else -> Color.White.copy(alpha = 0.28f)
+                        },
                         shape = RoundedCornerShape(50)
                     )
                     .padding(horizontal = 8.dp, vertical = 3.dp)
@@ -674,11 +711,18 @@ fun SquareCircularOdometerWidgetPreview(
                     modifier = Modifier
                         .size(6.dp)
                         .clip(CircleShape)
-                        .background(if (isTrackingActive) activeGreenBright else Color.White.copy(alpha = 0.45f))
+                        .background(
+                            when {
+                                isGpsWarning -> warningRed
+                                isTrackingActive -> activeGreenBright
+                                else -> Color.White.copy(alpha = 0.45f)
+                            }
+                        )
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
                     text = when {
+                        isGpsWarning -> "GPS MATI"
                         isMoving -> "JALAN"
                         isTrackingActive -> "NYALA"
                         else -> "MATI"
@@ -686,9 +730,13 @@ fun SquareCircularOdometerWidgetPreview(
                     style = TextStyle(
                         fontFamily = InterFontFamily,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 8.5.sp
+                        fontSize = 8.sp
                     ),
-                    color = if (isTrackingActive) activeGreenBright else Color.White.copy(alpha = 0.65f)
+                    color = when {
+                        isGpsWarning -> warningRedLight
+                        isTrackingActive -> activeGreenBright
+                        else -> Color.White.copy(alpha = 0.65f)
+                    }
                 )
             }
         }
@@ -787,7 +835,11 @@ fun SquareCircularOdometerWidgetPreview(
                         .background(Color.White.copy(alpha = if (isTrackingActive) 0.22f else 0.12f))
                         .border(
                             width = if (isTrackingActive) 1.dp else 0.dp,
-                            color = if (isTrackingActive) activeGreen.copy(alpha = 0.55f) else Color.Transparent,
+                            color = when {
+                                isGpsWarning -> warningRed.copy(alpha = 0.75f)
+                                isTrackingActive -> activeGreen.copy(alpha = 0.55f)
+                                else -> Color.Transparent
+                            },
                             shape = RoundedCornerShape(50)
                         )
                         .padding(horizontal = 8.dp, vertical = 2.dp)
@@ -803,39 +855,61 @@ fun SquareCircularOdometerWidgetPreview(
 
                 Spacer(modifier = Modifier.height(4.dp))
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
+                if (isGpsWarning) {
                     Box(
                         modifier = Modifier
-                            .size(6.dp)
-                            .clip(CircleShape)
-                            .background(
-                                when {
-                                    isMoving -> activeGreenBright
-                                    isTrackingActive -> activeGreen
-                                    else -> Color.White.copy(alpha = 0.45f)
-                                }
-                            )
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Icon(
-                        imageVector = Icons.Outlined.TwoWheeler,
-                        contentDescription = "Motor",
-                        tint = Color.White.copy(alpha = if (isTrackingActive) 0.95f else 0.55f),
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = if (isTrackingActive) "ON" else "OFF",
-                        style = TextStyle(
-                            fontFamily = InterFontFamily,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 8.sp
-                        ),
-                        color = if (isTrackingActive) activeGreenBright else Color.White.copy(alpha = 0.55f)
-                    )
+                            .clip(RoundedCornerShape(50))
+                            .background(warningRed)
+                            .clickable { onEnableGpsClick() }
+                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                            .testTag("widget_enable_gps_pill")
+                    ) {
+                        Text(
+                            text = "KETUK: HIDUPKAN GPS",
+                            style = TextStyle(
+                                fontFamily = InterFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 7.5.sp
+                            ),
+                            color = Color.White,
+                            maxLines = 1
+                        )
+                    }
+                } else {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    when {
+                                        isMoving -> activeGreenBright
+                                        isTrackingActive -> activeGreen
+                                        else -> Color.White.copy(alpha = 0.45f)
+                                    }
+                                )
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            imageVector = Icons.Outlined.TwoWheeler,
+                            contentDescription = "Motor",
+                            tint = Color.White.copy(alpha = if (isTrackingActive) 0.95f else 0.55f),
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = if (isTrackingActive) "ON" else "OFF",
+                            style = TextStyle(
+                                fontFamily = InterFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 8.sp
+                            ),
+                            color = if (isTrackingActive) activeGreenBright else Color.White.copy(alpha = 0.55f)
+                        )
+                    }
                 }
             }
         }

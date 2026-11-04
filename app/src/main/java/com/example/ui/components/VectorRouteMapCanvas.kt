@@ -123,7 +123,7 @@ private val DarkSlateOsmColorFilter = ColorFilter.colorMatrix(
 )
 
 private object CompliantTileMemoryCache {
-    private val cache = object : LruCache<String, ImageBitmap>(120) {}
+    private val cache = object : LruCache<String, ImageBitmap>(256) {}
 
     fun get(key: String): ImageBitmap? = synchronized(cache) { cache.get(key) }
 
@@ -158,6 +158,7 @@ private fun latToTileY(lat: Double, z: Int): Double {
 private fun chooseBestTileZoom(latSpan: Double, lngSpan: Double): Int {
     val maxSpan = max(latSpan, lngSpan)
     return when {
+        maxSpan > 0.70 -> 10
         maxSpan > 0.35 -> 11
         maxSpan > 0.16 -> 12
         maxSpan > 0.08 -> 13
@@ -621,23 +622,97 @@ private fun NativeInteractiveRouteMapCanvas(
     val centerTileX = floor(centerTileXExact).toInt()
     val centerTileY = floor(centerTileYExact).toInt()
 
-    // Prioritize center tiles first so the viewport fills immediately from center outward
-    val tileKeys = remember(mapMode, tileZoom, centerTileX, centerTileY, isCompactPreview) {
+    // Approximate pan shift in tile units so panning the map automatically loads newly visible regions
+    val panShiftTilesX = (-(panOffset.x / (240f * zoom.coerceAtLeast(0.5f)))).roundToInt().coerceIn(-6, 6)
+    val panShiftTilesY = (-(panOffset.y / (240f * zoom.coerceAtLeast(0.5f)))).roundToInt().coerceIn(-6, 6)
+    val zoomOutExtraMargin = if (zoom < 0.95f) 3 else 2
+
+    // Prioritize tiles directly along the route line first, then fill out the entire route bounds + viewport
+    val tileKeys = remember(
+        mapMode,
+        tileZoom,
+        minTileX,
+        maxTileX,
+        minTileY,
+        maxTileY,
+        panShiftTilesX,
+        panShiftTilesY,
+        zoomOutExtraMargin,
+        routePoints,
+        isCompactPreview
+    ) {
         if (isCompactPreview || mapMode != RouteMapMode.STREET_MAP) {
             emptyList()
         } else {
             val maxTileIndex = (1 shl tileZoom) - 1
+
+            // 1. Collect all tiles directly touched by the GPS route line (e.g. Prigen -> Pasuruan)
+            val routePathTiles = LinkedHashSet<Pair<Int, Int>>()
+            if (routePoints.isNotEmpty()) {
+                val step = (routePoints.size / 60).coerceAtLeast(1)
+                var prevTx = -1
+                var prevTy = -1
+                for (i in routePoints.indices step step) {
+                    val pt = routePoints[i]
+                    val tx = floor(lonToTileX(pt.lng, tileZoom)).toInt().coerceIn(0, maxTileIndex)
+                    val ty = floor(latToTileY(pt.lat, tileZoom)).toInt().coerceIn(0, maxTileIndex)
+                    routePathTiles.add(tx to ty)
+                    // Interpolate intermediate tiles between sample points so long segments never skip a tile
+                    if (prevTx != -1 && prevTy != -1 && (abs(tx - prevTx) > 1 || abs(ty - prevTy) > 1)) {
+                        val interpSteps = max(abs(tx - prevTx), abs(ty - prevTy)).coerceAtMost(12)
+                        for (s in 1 until interpSteps) {
+                            val ix = prevTx + ((tx - prevTx) * s) / interpSteps
+                            val iy = prevTy + ((ty - prevTy) * s) / interpSteps
+                            routePathTiles.add(ix.coerceIn(0, maxTileIndex) to iy.coerceIn(0, maxTileIndex))
+                        }
+                    }
+                    prevTx = tx
+                    prevTy = ty
+                }
+                val lastPt = routePoints.last()
+                routePathTiles.add(
+                    floor(lonToTileX(lastPt.lng, tileZoom)).toInt().coerceIn(0, maxTileIndex) to
+                        floor(latToTileY(lastPt.lat, tileZoom)).toInt().coerceIn(0, maxTileIndex)
+                )
+            }
+
+            // 2. Cover the full route bounding box + viewport margin + user pan offset
+            val startX = (floor(minTileX).toInt() - zoomOutExtraMargin + min(0, panShiftTilesX))
+                .coerceAtLeast(centerTileX - 5)
+                .coerceIn(0, maxTileIndex)
+            val endX = (floor(maxTileX).toInt() + zoomOutExtraMargin + max(0, panShiftTilesX))
+                .coerceAtMost(centerTileX + 5)
+                .coerceIn(0, maxTileIndex)
+            val startY = (floor(minTileY).toInt() - zoomOutExtraMargin + min(0, panShiftTilesY))
+                .coerceAtLeast(centerTileY - 5)
+                .coerceIn(0, maxTileIndex)
+            val endY = (floor(maxTileY).toInt() + zoomOutExtraMargin + max(0, panShiftTilesY))
+                .coerceAtMost(centerTileY + 5)
+                .coerceIn(0, maxTileIndex)
+
+            val focusX = centerTileX + panShiftTilesX
+            val focusY = centerTileY + panShiftTilesY
+
             buildList {
-                for (dx in -2..2) {
-                    for (dy in -2..2) {
-                        val tx = (centerTileX + dx).coerceIn(0, maxTileIndex)
-                        val ty = (centerTileY + dy).coerceIn(0, maxTileIndex)
+                // First add tiles directly along the route line (and their immediate 1-tile neighbors)
+                routePathTiles.forEach { (rtx, rty) ->
+                    add(MapTileRequestKey(tileZoom, rtx, rty))
+                }
+                // Then add all tiles covering the full bounding box & panned viewport
+                for (tx in startX..endX) {
+                    for (ty in startY..endY) {
                         add(MapTileRequestKey(tileZoom, tx, ty))
                     }
                 }
             }
                 .distinctBy { it.cacheKey }
-                .sortedBy { abs(it.x - centerTileX) + abs(it.y - centerTileY) }
+                .sortedWith(
+                    compareBy<MapTileRequestKey> { key ->
+                        if (routePathTiles.contains(key.x to key.y)) 0 else 1
+                    }.thenBy { key ->
+                        abs(key.x - focusX) + abs(key.y - focusY)
+                    }
+                )
         }
     }
 

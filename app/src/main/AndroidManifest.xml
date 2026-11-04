@@ -67,7 +67,9 @@
             android:label="MOTO ODO 1:1">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.location.PROVIDERS_CHANGED" />
                 <action android:name="com.example.action.WIDGET_TOGGLE_AUTO_TRACKING" />
+                <action android:name="com.example.action.WIDGET_ENABLE_GPS" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"

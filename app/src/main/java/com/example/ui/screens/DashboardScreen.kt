@@ -473,6 +473,9 @@ fun DashboardScreen(
                         onStopAutoTracking()
                     } else {
                         onRequestPermissionsAndStart()
+                        if (!telemetryState.isGpsHardwareEnabled) {
+                            onOpenLocationSettings()
+                        }
                     }
                 }
 
@@ -490,10 +493,14 @@ fun DashboardScreen(
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "Tekan saklar O/I di pojok kiri atas widget untuk menghidupkan/mematikan Auto Track",
+                                text = if (isTrackingActive && !telemetryState.isGpsHardwareEnabled) {
+                                    "Lokasi/GPS sedang mati • Ketuk widget untuk menghidupkan GPS otomatis"
+                                } else {
+                                    "Tekan saklar O/I di pojok kiri atas widget untuk menghidupkan/mematikan Auto Track"
+                                },
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontSize = 12.sp,
-                                color = cs.onSurfaceVariant
+                                color = if (isTrackingActive && !telemetryState.isGpsHardwareEnabled) cs.error else cs.onSurfaceVariant
                             )
                         }
                         TextButton(onClick = { showFullWidgetGallerySheet = true }) {
@@ -519,7 +526,9 @@ fun DashboardScreen(
                             widgetTheme = settingsState.widgetTheme,
                             isMoving = telemetryState.motionStatus == MotionStatus.MOVING && isTrackingActive,
                             isTrackingActive = isTrackingActive,
+                            isGpsEnabled = telemetryState.isGpsHardwareEnabled,
                             onTogglePowerClick = toggleWidgetTracking,
+                            onEnableGpsClick = onOpenLocationSettings,
                             sizeDp = 196.dp
                         )
                     }
@@ -641,9 +650,13 @@ fun DashboardScreen(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Tekan saklar O/I di pojok kiri atas untuk menyalakan/mematikan Auto Track",
+                            text = if (isTrackingActive && !telemetryState.isGpsHardwareEnabled) {
+                                "GPS sedang mati • Ketuk widget untuk menghidupkan lokasi GPS"
+                            } else {
+                                "Tekan saklar O/I di pojok kiri atas untuk menyalakan/mematikan Auto Track"
+                            },
                             style = MaterialTheme.typography.bodyMedium,
-                            color = cs.onSurfaceVariant
+                            color = if (isTrackingActive && !telemetryState.isGpsHardwareEnabled) cs.error else cs.onSurfaceVariant
                         )
                     }
 
@@ -656,13 +669,18 @@ fun DashboardScreen(
                             widgetTheme = settingsState.widgetTheme,
                             isMoving = telemetryState.motionStatus == MotionStatus.MOVING && isTrackingActive,
                             isTrackingActive = isTrackingActive,
+                            isGpsEnabled = telemetryState.isGpsHardwareEnabled,
                             onTogglePowerClick = {
                                 if (isTrackingActive) {
                                     onStopAutoTracking()
                                 } else {
                                     onRequestPermissionsAndStart()
+                                    if (!telemetryState.isGpsHardwareEnabled) {
+                                        onOpenLocationSettings()
+                                    }
                                 }
                             },
+                            onEnableGpsClick = onOpenLocationSettings,
                             sizeDp = 216.dp
                         )
 

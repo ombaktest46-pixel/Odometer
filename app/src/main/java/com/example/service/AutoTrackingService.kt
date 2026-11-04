@@ -613,6 +613,10 @@ class AutoTrackingService : Service() {
         val compactSummary = "$speedFormatted ${unit.symbol} • ODO: $totalFormatted ${unit.distanceSymbol} • TRIP: $tripFormatted ${unit.distanceSymbol}"
 
         val openAppIntent = Intent(this, MainActivity::class.java).apply {
+            if (!state.isGpsHardwareEnabled) {
+                action = com.example.widget.MotoOdoWidgetProvider.ACTION_WIDGET_ENABLE_GPS
+                putExtra(com.example.widget.MotoOdoWidgetProvider.EXTRA_PROMPT_ENABLE_GPS, true)
+            }
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
         val openPendingIntent = PendingIntent.getActivity(
@@ -632,6 +636,12 @@ class AutoTrackingService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val primaryActionLabel = if (!state.isGpsHardwareEnabled) {
+            "Hidupkan GPS"
+        } else {
+            getString(R.string.notif_action_open)
+        }
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_moto_notification)
             .setContentTitle("MOTO ODO \uD83C\uDFCD\uFE0F")
@@ -650,7 +660,7 @@ class AutoTrackingService : Service() {
             .setContentIntent(openPendingIntent)
             .addAction(
                 R.drawable.ic_moto_notification,
-                getString(R.string.notif_action_open),
+                primaryActionLabel,
                 openPendingIntent
             )
             .addAction(

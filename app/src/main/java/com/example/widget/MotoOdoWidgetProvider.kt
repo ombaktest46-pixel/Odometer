@@ -17,6 +17,7 @@ import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
+import android.location.LocationManager
 import android.os.Build
 import android.widget.RemoteViews
 import androidx.core.content.ContextCompat
@@ -24,6 +25,7 @@ import androidx.core.content.res.ResourcesCompat
 import com.example.MainActivity
 import com.example.MotoOdoApplication
 import com.example.R
+import com.example.model.GpsSignalQuality
 import com.example.model.MotionStatus
 import com.example.model.SpeedUnit
 import com.example.model.TelemetryFormatter
@@ -38,38 +40,87 @@ import kotlinx.coroutines.launch
  * 2x2 Square Rounded Home Screen AppWidget for MOTO ODO.
  * Features:
  * - Interactive Top-Left O/I Power Rocker Switch & tap-to-toggle Auto Tracking
- * - Clear Active (NYALA) vs Standby (MATI) visual indicator & glowing border
+ * - Automatic GPS / Location state detection (PROVIDERS_CHANGED)
+ * - Prominent "GPS MATI • KETUK: HIDUPKAN GPS" warning & 1-tap GPS prompt when Auto Track is ON but Location is OFF
  * - Circular progress ring following Total Odometer across 1 - 999.999 KM
  */
 class MotoOdoWidgetProvider : AppWidgetProvider() {
 
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
-        if (intent.action == ACTION_WIDGET_TOGGLE_AUTO_TRACKING) {
-            val pendingResult = goAsync()
-            val appContext = context.applicationContext
-            CoroutineScope(Dispatchers.IO).launch {
-                try {
-                    val app = appContext as? MotoOdoApplication
-                    val persisted = runCatching { app?.odometerPreferences?.getSnapshot() }.getOrNull()
-                    val live = TelemetryStateHolder.telemetryState.value
-                    val currentlyActive = live.isAutoTrackingEnabled || (persisted?.settings?.isAutoTrackingEnabled == true)
-                    val nextActive = !currentlyActive
+        val action = intent.action ?: return
 
-                    if (nextActive) {
+        when (action) {
+            LocationManager.PROVIDERS_CHANGED_ACTION -> {
+                val pendingResult = goAsync()
+                val appContext = context.applicationContext
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        val gpsOn = isGpsHardwareEnabled(appContext)
+                        val app = appContext as? MotoOdoApplication
+                        val persisted = runCatching { app?.odometerPreferences?.getSnapshot() }.getOrNull()
+                        val live = TelemetryStateHolder.telemetryState.value
+                        val isTrackingActive = live.isAutoTrackingEnabled || (persisted?.settings?.isAutoTrackingEnabled == true)
+
+                        TelemetryStateHolder.updateState { current ->
+                            current.copy(
+                                isGpsHardwareEnabled = gpsOn,
+                                motionStatus = when {
+                                    !isTrackingActive -> MotionStatus.TRACKING_OFF
+                                    !gpsOn -> MotionStatus.SEARCHING_GPS
+                                    current.motionStatus == MotionStatus.TRACKING_OFF -> MotionStatus.STOPPED
+                                    else -> current.motionStatus
+                                },
+                                gpsSignalQuality = if (!gpsOn) GpsSignalQuality.NO_SIGNAL else current.gpsSignalQuality,
+                                statusDetailMessage = if (gpsOn) {
+                                    "GPS aktif • Memantau pergerakan motor otomatis"
+                                } else {
+                                    "GPS HP sedang mati • Ketuk widget untuk menghidupkan GPS"
+                                }
+                            )
+                        }
+
+                        // Automatically resume AutoTrackingService when GPS is turned back ON while Auto Track is active
+                        if (isTrackingActive && gpsOn && hasLocationPermission(appContext)) {
+                            runCatching {
+                                AutoTrackingService.startService(
+                                    appContext,
+                                    AutoTrackingService.ACTION_START_AUTO_TRACKING
+                                )
+                            }
+                        }
+
+                        updateAllWidgetsSuspend(appContext, forceActiveOverride = null)
+                    } finally {
+                        pendingResult.finish()
+                    }
+                }
+            }
+
+            ACTION_WIDGET_ENABLE_GPS -> {
+                val pendingResult = goAsync()
+                val appContext = context.applicationContext
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        val app = appContext as? MotoOdoApplication
                         app?.odometerPreferences?.setAutoTrackingEnabled(true)
+                        val gpsOn = isGpsHardwareEnabled(appContext)
+                        val hasPerm = hasLocationPermission(appContext)
+
                         TelemetryStateHolder.updateState { current ->
                             current.copy(
                                 isAutoTrackingEnabled = true,
-                                motionStatus = if (current.motionStatus == MotionStatus.TRACKING_OFF) {
-                                    MotionStatus.STOPPED
+                                isGpsHardwareEnabled = gpsOn,
+                                motionStatus = if (gpsOn) MotionStatus.STOPPED else MotionStatus.SEARCHING_GPS,
+                                statusDetailMessage = if (gpsOn) {
+                                    "GPS aktif • Auto Tracking berjalan"
                                 } else {
-                                    current.motionStatus
-                                },
-                                statusDetailMessage = "Auto Tracking diaktifkan dari Widget • Memantau GPS"
+                                    "Silakan aktifkan lokasi GPS pada dialog layar"
+                                }
                             )
                         }
-                        if (hasLocationPermission(appContext)) {
+
+                        if (hasPerm && gpsOn) {
                             runCatching {
                                 AutoTrackingService.startService(
                                     appContext,
@@ -77,28 +128,94 @@ class MotoOdoWidgetProvider : AppWidgetProvider() {
                                 )
                             }
                         } else {
-                            runCatching {
-                                val openIntent = Intent(appContext, MainActivity::class.java).apply {
-                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                                        Intent.FLAG_ACTIVITY_CLEAR_TOP
+                            if (hasPerm) {
+                                runCatching {
+                                    AutoTrackingService.startService(
+                                        appContext,
+                                        AutoTrackingService.ACTION_START_AUTO_TRACKING
+                                    )
                                 }
-                                appContext.startActivity(openIntent)
                             }
+                            launchMainActivityForGpsPrompt(appContext)
                         }
-                    } else {
-                        app?.odometerPreferences?.setAutoTrackingEnabled(false)
-                        TelemetryStateHolder.onTrackingStopped()
-                        runCatching {
-                            AutoTrackingService.stopService(appContext)
-                        }
-                    }
 
-                    updateAllWidgetsSuspend(appContext, forceActiveOverride = nextActive)
-                } finally {
-                    pendingResult.finish()
+                        updateAllWidgetsSuspend(appContext, forceActiveOverride = true)
+                    } finally {
+                        pendingResult.finish()
+                    }
                 }
             }
+
+            ACTION_WIDGET_TOGGLE_AUTO_TRACKING -> {
+                val pendingResult = goAsync()
+                val appContext = context.applicationContext
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        val app = appContext as? MotoOdoApplication
+                        val persisted = runCatching { app?.odometerPreferences?.getSnapshot() }.getOrNull()
+                        val live = TelemetryStateHolder.telemetryState.value
+                        val currentlyActive = live.isAutoTrackingEnabled || (persisted?.settings?.isAutoTrackingEnabled == true)
+                        val nextActive = !currentlyActive
+                        val gpsOn = isGpsHardwareEnabled(appContext)
+                        val hasPerm = hasLocationPermission(appContext)
+
+                        if (nextActive) {
+                            app?.odometerPreferences?.setAutoTrackingEnabled(true)
+                            TelemetryStateHolder.updateState { current ->
+                                current.copy(
+                                    isAutoTrackingEnabled = true,
+                                    isGpsHardwareEnabled = gpsOn,
+                                    motionStatus = when {
+                                        !gpsOn -> MotionStatus.SEARCHING_GPS
+                                        current.motionStatus == MotionStatus.TRACKING_OFF -> MotionStatus.STOPPED
+                                        else -> current.motionStatus
+                                    },
+                                    statusDetailMessage = if (gpsOn) {
+                                        "Auto Tracking diaktifkan dari Widget • Memantau GPS"
+                                    } else {
+                                        "Auto Tracking aktif • Hidupkan lokasi GPS agar bekerja"
+                                    }
+                                )
+                            }
+                            if (hasPerm) {
+                                runCatching {
+                                    AutoTrackingService.startService(
+                                        appContext,
+                                        AutoTrackingService.ACTION_START_AUTO_TRACKING
+                                    )
+                                }
+                            }
+                            // If permission is missing OR GPS/Location is OFF, immediately prompt the user to turn on GPS/Location!
+                            if (!hasPerm || !gpsOn) {
+                                launchMainActivityForGpsPrompt(appContext)
+                            }
+                        } else {
+                            app?.odometerPreferences?.setAutoTrackingEnabled(false)
+                            TelemetryStateHolder.onTrackingStopped()
+                            runCatching {
+                                AutoTrackingService.stopService(appContext)
+                            }
+                        }
+
+                        updateAllWidgetsSuspend(appContext, forceActiveOverride = nextActive)
+                    } finally {
+                        pendingResult.finish()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun launchMainActivityForGpsPrompt(appContext: Context) {
+        runCatching {
+            val openIntent = Intent(appContext, MainActivity::class.java).apply {
+                action = ACTION_WIDGET_ENABLE_GPS
+                putExtra(EXTRA_PROMPT_ENABLE_GPS, true)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
+            appContext.startActivity(openIntent)
         }
     }
 
@@ -129,6 +246,15 @@ class MotoOdoWidgetProvider : AppWidgetProvider() {
 
     companion object {
         const val ACTION_WIDGET_TOGGLE_AUTO_TRACKING = "com.example.action.WIDGET_TOGGLE_AUTO_TRACKING"
+        const val ACTION_WIDGET_ENABLE_GPS = "com.example.action.WIDGET_ENABLE_GPS"
+        const val EXTRA_PROMPT_ENABLE_GPS = "extra_prompt_enable_gps"
+
+        fun isGpsHardwareEnabled(context: Context): Boolean {
+            val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return false
+            return runCatching {
+                lm.isProviderEnabled(LocationManager.GPS_PROVIDER)
+            }.getOrDefault(false)
+        }
 
         fun updateAllWidgets(context: Context) {
             val appContext = context.applicationContext
@@ -158,7 +284,8 @@ class MotoOdoWidgetProvider : AppWidgetProvider() {
             val tripKm = maxOf(persisted?.tripOdometerKm ?: 0.0, live.tripOdometerKm)
             val isTrackingActive = forceActiveOverride
                 ?: (live.isAutoTrackingEnabled || (persisted?.settings?.isAutoTrackingEnabled == true))
-            val isMoving = isTrackingActive && live.motionStatus == MotionStatus.MOVING
+            val isGpsEnabled = isGpsHardwareEnabled(appContext)
+            val isMoving = isTrackingActive && isGpsEnabled && live.motionStatus == MotionStatus.MOVING
 
             val odoFormatted = TelemetryFormatter.formatOdometer(totalKm, unit.multiplier)
             val tripFormatted = "Trip ${TelemetryFormatter.formatOdometerHighPrecision(tripKm, unit.multiplier)} ${unit.distanceSymbol}"
@@ -174,6 +301,7 @@ class MotoOdoWidgetProvider : AppWidgetProvider() {
                 unitLabel = unit.distanceSymbol.uppercase(),
                 tripLabel = tripFormatted,
                 isTrackingActive = isTrackingActive,
+                isGpsEnabled = isGpsEnabled,
                 isMoving = isMoving,
                 odoProgressFraction = odoRingProgress,
                 themeStyle = widgetTheme
@@ -189,10 +317,28 @@ class MotoOdoWidgetProvider : AppWidgetProvider() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
+            val enableGpsIntent = Intent(appContext, MotoOdoWidgetProvider::class.java).apply {
+                action = ACTION_WIDGET_ENABLE_GPS
+            }
+            val enableGpsPendingIntent = PendingIntent.getBroadcast(
+                appContext,
+                203,
+                enableGpsIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            // When Auto Track is ON but GPS is OFF, tapping the widget body directly prompts to turn ON GPS,
+            // while tapping the top-left O/I power switch still toggles Auto Track ON/OFF.
+            val rootPendingIntent = if (isTrackingActive && !isGpsEnabled) {
+                enableGpsPendingIntent
+            } else {
+                togglePendingIntent
+            }
+
             for (widgetId in widgetIds) {
                 val views = RemoteViews(appContext.packageName, R.layout.widget_moto_odo_1x1).apply {
                     setImageViewBitmap(R.id.widget_canvas_image, bitmap)
-                    setOnClickPendingIntent(R.id.widget_root_container, togglePendingIntent)
+                    setOnClickPendingIntent(R.id.widget_root_container, rootPendingIntent)
                     setOnClickPendingIntent(R.id.widget_power_toggle_btn, togglePendingIntent)
                 }
                 appWidgetManager.updateAppWidget(widgetId, views)
@@ -206,6 +352,7 @@ class MotoOdoWidgetProvider : AppWidgetProvider() {
             unitLabel: String,
             tripLabel: String,
             isTrackingActive: Boolean,
+            isGpsEnabled: Boolean,
             isMoving: Boolean,
             odoProgressFraction: Float,
             themeStyle: WidgetThemeStyle
@@ -220,6 +367,8 @@ class MotoOdoWidgetProvider : AppWidgetProvider() {
 
             val boldTypeface = Typeface.create(customTypeface, Typeface.BOLD)
             val mediumTypeface = Typeface.create(customTypeface, Typeface.NORMAL)
+
+            val isGpsWarning = isTrackingActive && !isGpsEnabled
 
             // 1. Rounded Square Card Background with Gradient
             val cardRect = RectF(12f, 12f, sizePx - 12f, sizePx - 12f)
@@ -237,21 +386,33 @@ class MotoOdoWidgetProvider : AppWidgetProvider() {
             }
             canvas.drawRoundRect(cardRect, cornerRadius, cornerRadius, bgPaint)
 
-            // Subtle Standby Dim Veil when Auto Tracking is OFF so ON vs OFF is unmistakable
+            // Subtle Standby Dim Veil when Auto Tracking is OFF
             if (!isTrackingActive) {
                 val standbyOverlayPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     style = Paint.Style.FILL
                     color = Color.argb(82, 10, 12, 18)
                 }
                 canvas.drawRoundRect(cardRect, cornerRadius, cornerRadius, standbyOverlayPaint)
+            } else if (isGpsWarning) {
+                // Subtle Red Warning Tint when Auto Track is ON but GPS is OFF
+                val gpsOffOverlayPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    style = Paint.Style.FILL
+                    color = Color.argb(46, 180, 24, 34)
+                }
+                canvas.drawRoundRect(cardRect, cornerRadius, cornerRadius, gpsOffOverlayPaint)
             }
 
-            // Outer Card Border: Glowing Emerald Green when ON, Thin Neutral when OFF
+            // Outer Card Border: Red Warning if GPS OFF while active, Emerald Green when active+GPS ON, Neutral when OFF
             val activeGreen = Color.parseColor("#20B978")
+            val warningRed = Color.parseColor("#E5484D")
             val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 style = Paint.Style.STROKE
-                strokeWidth = if (isTrackingActive) 5.5f else 3f
-                color = if (isTrackingActive) activeGreen else Color.argb(48, 255, 255, 255)
+                strokeWidth = if (isTrackingActive) 6f else 3f
+                color = when {
+                    isGpsWarning -> warningRed
+                    isTrackingActive -> activeGreen
+                    else -> Color.argb(48, 255, 255, 255)
+                }
             }
             canvas.drawRoundRect(cardRect, cornerRadius, cornerRadius, borderPaint)
 
@@ -261,15 +422,17 @@ class MotoOdoWidgetProvider : AppWidgetProvider() {
                 left = 36f,
                 top = 34f,
                 isTrackingActive = isTrackingActive,
+                isGpsWarning = isGpsWarning,
                 boldTypeface = boldTypeface
             )
 
-            // 3. TOP-RIGHT CORNER: Live Status Badge (● ON / ○ OFF)
+            // 3. TOP-RIGHT CORNER: Live Status Badge (● NYALA / ⚠ GPS MATI / ○ MATI)
             drawTopRightStatusBadge(
                 canvas = canvas,
                 right = sizePx - 36f,
                 top = 34f,
                 isTrackingActive = isTrackingActive,
+                isGpsEnabled = isGpsEnabled,
                 isMoving = isMoving,
                 boldTypeface = boldTypeface
             )
@@ -298,10 +461,10 @@ class MotoOdoWidgetProvider : AppWidgetProvider() {
             }
             canvas.drawArc(ringRect, 0f, 360f, false, trackPaint)
 
-            val ringColor = if (isTrackingActive) {
-                themeStyle.ringColorHex.toInt()
-            } else {
-                Color.argb(125, 210, 218, 230)
+            val ringColor = when {
+                isGpsWarning -> Color.parseColor("#F16B70")
+                isTrackingActive -> themeStyle.ringColorHex.toInt()
+                else -> Color.argb(125, 210, 218, 230)
             }
 
             if (odoProgressFraction > 0.001f) {
@@ -314,7 +477,6 @@ class MotoOdoWidgetProvider : AppWidgetProvider() {
                 val sweepAngle = 360f * odoProgressFraction.coerceIn(0f, 1f)
                 canvas.drawArc(ringRect, -90f, sweepAngle, false, activeRingPaint)
             } else {
-                // At 0 KM, draw a starting dot at 12 o'clock (-90 deg)
                 val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     style = Paint.Style.FILL
                     color = ringColor
@@ -389,18 +551,23 @@ class MotoOdoWidgetProvider : AppWidgetProvider() {
                 val pillStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     style = Paint.Style.STROKE
                     strokeWidth = 2f
-                    color = Color.argb(140, 32, 185, 120)
+                    color = if (isGpsWarning) {
+                        Color.argb(175, 241, 107, 112)
+                    } else {
+                        Color.argb(140, 32, 185, 120)
+                    }
                 }
                 canvas.drawRoundRect(pillRect, 24f, 24f, pillStrokePaint)
             }
             canvas.drawText(tripLabel, centerX, 362f, tripTextPaint)
 
-            // 8. Bottom Vector Motorcycle Emblem & Tracking State inside Ring
+            // 8. Bottom Vector Motorcycle Emblem & GPS / Tracking State inside Ring
             drawMotoEmblem(
                 canvas = canvas,
                 cx = centerX,
                 cy = 428f,
                 isTrackingActive = isTrackingActive,
+                isGpsEnabled = isGpsEnabled,
                 isMoving = isMoving,
                 boldTypeface = boldTypeface
             )
@@ -416,6 +583,7 @@ class MotoOdoWidgetProvider : AppWidgetProvider() {
             left: Float,
             top: Float,
             isTrackingActive: Boolean,
+            isGpsWarning: Boolean,
             boldTypeface: Typeface
         ) {
             val width = 142f
@@ -423,7 +591,6 @@ class MotoOdoWidgetProvider : AppWidgetProvider() {
             val switchRect = RectF(left, top, left + width, top + height)
             val radius = height / 2f
 
-            // Outer housing pill
             val housingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 style = Paint.Style.FILL
                 color = Color.argb(135, 15, 19, 26)
@@ -433,15 +600,14 @@ class MotoOdoWidgetProvider : AppWidgetProvider() {
             val housingBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 style = Paint.Style.STROKE
                 strokeWidth = 2.5f
-                color = if (isTrackingActive) {
-                    Color.parseColor("#20B978")
-                } else {
-                    Color.argb(95, 255, 255, 255)
+                color = when {
+                    isGpsWarning -> Color.parseColor("#F16B70")
+                    isTrackingActive -> Color.parseColor("#20B978")
+                    else -> Color.argb(95, 255, 255, 255)
                 }
             }
             canvas.drawRoundRect(switchRect, radius, radius, housingBorderPaint)
 
-            // Sliding thumb: Left half ('O' = OFF) vs Right half ('I' = ON)
             val pad = 5f
             val thumbW = (width - pad * 2f) / 2f
             val thumbRect = if (isTrackingActive) {
@@ -451,15 +617,14 @@ class MotoOdoWidgetProvider : AppWidgetProvider() {
             }
             val thumbPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 style = Paint.Style.FILL
-                color = if (isTrackingActive) {
-                    Color.parseColor("#16A36A")
-                } else {
-                    Color.argb(115, 115, 123, 136)
+                color = when {
+                    isGpsWarning -> Color.parseColor("#E5484D")
+                    isTrackingActive -> Color.parseColor("#16A36A")
+                    else -> Color.argb(115, 115, 123, 136)
                 }
             }
             canvas.drawRoundRect(thumbRect, (height - pad * 2f) / 2f, (height - pad * 2f) / 2f, thumbPaint)
 
-            // Draw 'O' on the left side and 'I' + Power icon on the right side
             val leftCenterX = left + pad + thumbW / 2f
             val rightCenterX = left + pad + thumbW + thumbW / 2f
             val textBaselineY = top + height / 2f + 8f
@@ -472,7 +637,6 @@ class MotoOdoWidgetProvider : AppWidgetProvider() {
             }
             canvas.drawText("O", leftCenterX, textBaselineY, labelOPaint)
 
-            // Draw power icon + 'I' on the right half
             val rightColor = if (isTrackingActive) Color.WHITE else Color.argb(130, 255, 255, 255)
             val powerIconPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 style = Paint.Style.STROKE
@@ -497,25 +661,27 @@ class MotoOdoWidgetProvider : AppWidgetProvider() {
         }
 
         /**
-         * Draws a clean active/off status pill in the top-right corner of the widget.
+         * Draws a clean active/off/GPS-off status pill in the top-right corner of the widget.
          */
         private fun drawTopRightStatusBadge(
             canvas: Canvas,
             right: Float,
             top: Float,
             isTrackingActive: Boolean,
+            isGpsEnabled: Boolean,
             isMoving: Boolean,
             boldTypeface: Typeface
         ) {
-            val badgeW = 128f
+            val isGpsWarning = isTrackingActive && !isGpsEnabled
+            val badgeW = if (isGpsWarning) 152f else 128f
             val badgeH = 44f
             val rect = RectF(right - badgeW, top + 4f, right, top + 4f + badgeH)
             val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 style = Paint.Style.FILL
-                color = if (isTrackingActive) {
-                    Color.argb(145, 16, 42, 32)
-                } else {
-                    Color.argb(120, 15, 19, 26)
+                color = when {
+                    isGpsWarning -> Color.argb(185, 68, 16, 22)
+                    isTrackingActive -> Color.argb(145, 16, 42, 32)
+                    else -> Color.argb(120, 15, 19, 26)
                 }
             }
             canvas.drawRoundRect(rect, badgeH / 2f, badgeH / 2f, bgPaint)
@@ -523,39 +689,44 @@ class MotoOdoWidgetProvider : AppWidgetProvider() {
             val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 style = Paint.Style.STROKE
                 strokeWidth = 2f
-                color = if (isTrackingActive) {
-                    Color.parseColor("#20B978")
-                } else {
-                    Color.argb(75, 255, 255, 255)
+                color = when {
+                    isGpsWarning -> Color.parseColor("#F16B70")
+                    isTrackingActive -> Color.parseColor("#20B978")
+                    else -> Color.argb(75, 255, 255, 255)
                 }
             }
             canvas.drawRoundRect(rect, badgeH / 2f, badgeH / 2f, borderPaint)
 
-            val dotColor = if (isTrackingActive) {
-                Color.parseColor("#20B978")
-            } else {
-                Color.argb(140, 160, 168, 181)
+            val dotColor = when {
+                isGpsWarning -> Color.parseColor("#F16B70")
+                isTrackingActive -> Color.parseColor("#20B978")
+                else -> Color.argb(140, 160, 168, 181)
             }
             val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 style = Paint.Style.FILL
                 color = dotColor
             }
-            val dotX = rect.left + 22f
+            val dotX = rect.left + 20f
             val dotY = rect.centerY()
             canvas.drawCircle(dotX, dotY, 6.5f, dotPaint)
 
             val statusLabel = when {
+                isGpsWarning -> "GPS MATI"
                 isMoving -> "JALAN"
                 isTrackingActive -> "NYALA"
                 else -> "MATI"
             }
             val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 typeface = boldTypeface
-                textSize = 19f
+                textSize = if (isGpsWarning) 17.5f else 19f
                 textAlign = Paint.Align.LEFT
-                color = if (isTrackingActive) Color.parseColor("#4ADE80") else Color.argb(175, 255, 255, 255)
+                color = when {
+                    isGpsWarning -> Color.parseColor("#FCA5A5")
+                    isTrackingActive -> Color.parseColor("#4ADE80")
+                    else -> Color.argb(175, 255, 255, 255)
+                }
             }
-            canvas.drawText(statusLabel, dotX + 13f, dotY + 7f, textPaint)
+            canvas.drawText(statusLabel, dotX + 12f, dotY + 6.5f, textPaint)
         }
 
         private fun drawMotoEmblem(
@@ -563,16 +734,22 @@ class MotoOdoWidgetProvider : AppWidgetProvider() {
             cx: Float,
             cy: Float,
             isTrackingActive: Boolean,
+            isGpsEnabled: Boolean,
             isMoving: Boolean,
             boldTypeface: Typeface
         ) {
+            val isGpsWarning = isTrackingActive && !isGpsEnabled
             val iconAlpha = if (isTrackingActive) 240 else 135
             val iconPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 style = Paint.Style.STROKE
                 strokeWidth = 5.5f
                 strokeCap = Paint.Cap.ROUND
                 strokeJoin = Paint.Join.ROUND
-                color = Color.argb(iconAlpha, 255, 255, 255)
+                color = if (isGpsWarning) {
+                    Color.parseColor("#FCA5A5")
+                } else {
+                    Color.argb(iconAlpha, 255, 255, 255)
+                }
             }
             canvas.drawCircle(cx - 28f, cy + 4f, 12f, iconPaint)
             canvas.drawCircle(cx + 28f, cy + 4f, 12f, iconPaint)
@@ -593,6 +770,7 @@ class MotoOdoWidgetProvider : AppWidgetProvider() {
             val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 style = Paint.Style.FILL
                 color = when {
+                    isGpsWarning -> Color.parseColor("#E5484D")
                     isMoving -> Color.parseColor("#4ADE80")
                     isTrackingActive -> Color.parseColor("#20B978")
                     else -> Color.argb(120, 255, 255, 255)
@@ -600,18 +778,36 @@ class MotoOdoWidgetProvider : AppWidgetProvider() {
             }
             canvas.drawCircle(cx, cy - 26f, 5f, dotPaint)
 
-            val subStatusPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                typeface = boldTypeface
-                textSize = 16f
-                textAlign = Paint.Align.CENTER
-                color = if (isTrackingActive) {
-                    Color.parseColor("#4ADE80")
-                } else {
-                    Color.argb(150, 255, 255, 255)
+            if (isGpsWarning) {
+                // Prominent clickable action pill inside the widget telling the rider to turn on GPS
+                val warnPillRect = RectF(cx - 124f, cy + 16f, cx + 124f, cy + 48f)
+                val warnPillBg = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    style = Paint.Style.FILL
+                    color = Color.parseColor("#E5484D")
                 }
+                canvas.drawRoundRect(warnPillRect, 16f, 16f, warnPillBg)
+
+                val warnTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    typeface = boldTypeface
+                    textSize = 15.5f
+                    textAlign = Paint.Align.CENTER
+                    color = Color.WHITE
+                }
+                canvas.drawText("KETUK: HIDUPKAN GPS", cx, cy + 37.5f, warnTextPaint)
+            } else {
+                val subStatusPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    typeface = boldTypeface
+                    textSize = 16f
+                    textAlign = Paint.Align.CENTER
+                    color = if (isTrackingActive) {
+                        Color.parseColor("#4ADE80")
+                    } else {
+                        Color.argb(150, 255, 255, 255)
+                    }
+                }
+                val subText = if (isTrackingActive) "AUTO TRACK ON" else "AUTO TRACK OFF"
+                canvas.drawText(subText, cx, cy + 36f, subStatusPaint)
             }
-            val subText = if (isTrackingActive) "AUTO TRACK ON" else "AUTO TRACK OFF"
-            canvas.drawText(subText, cx, cy + 36f, subStatusPaint)
         }
 
         fun requestPinWidget(context: Context): Boolean {
