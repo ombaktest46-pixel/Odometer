@@ -75,10 +75,13 @@ import com.example.model.MotionStatus
 import com.example.model.SettingsState
 import com.example.model.TelemetryFormatter
 import com.example.model.WidgetThemeStyle
+import androidx.compose.material.icons.outlined.GpsFixed
+import androidx.compose.ui.text.TextStyle
 import com.example.ui.components.DigitalSpeedometerGauge
 import com.example.ui.components.MotoCard
 import com.example.ui.components.PermanentOdometerDisplayCard
 import com.example.ui.components.SquareCircularOdometerWidgetPreview
+import com.example.ui.theme.InterFontFamily
 
 @Composable
 fun DashboardScreen(

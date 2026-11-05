@@ -208,12 +208,12 @@ class MotoOdoWidgetProvider : AppWidgetProvider() {
 
     private fun launchMainActivityForGpsPrompt(appContext: Context) {
         runCatching {
-            val openIntent = Intent(appContext, MainActivity::class.java).apply {
+            val openIntent = Intent(appContext, WidgetGpsPromptActivity::class.java).apply {
                 action = ACTION_WIDGET_ENABLE_GPS
                 putExtra(EXTRA_PROMPT_ENABLE_GPS, true)
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_NO_ANIMATION
             }
             appContext.startActivity(openIntent)
         }
@@ -256,6 +256,18 @@ class MotoOdoWidgetProvider : AppWidgetProvider() {
             }.getOrDefault(false)
         }
 
+        private fun checkHasLocationPermission(context: Context): Boolean {
+            val fine = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+            val coarse = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+            return fine || coarse
+        }
+
         fun updateAllWidgets(context: Context) {
             val appContext = context.applicationContext
             CoroutineScope(Dispatchers.IO).launch {
@@ -285,6 +297,7 @@ class MotoOdoWidgetProvider : AppWidgetProvider() {
             val isTrackingActive = forceActiveOverride
                 ?: (live.isAutoTrackingEnabled || (persisted?.settings?.isAutoTrackingEnabled == true))
             val isGpsEnabled = isGpsHardwareEnabled(appContext)
+            val hasPerm = checkHasLocationPermission(appContext)
             val isMoving = isTrackingActive && isGpsEnabled && live.motionStatus == MotionStatus.MOVING
 
             val odoFormatted = TelemetryFormatter.formatOdometer(totalKm, unit.multiplier)
@@ -317,29 +330,41 @@ class MotoOdoWidgetProvider : AppWidgetProvider() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
-            val enableGpsIntent = Intent(appContext, MotoOdoWidgetProvider::class.java).apply {
+            // Direct translucent Home-Screen activity PendingIntent so the 1-tap GPS dialog pops up
+            // directly over the Home Screen without opening the full MainActivity app!
+            val gpsPromptActivityIntent = Intent(appContext, WidgetGpsPromptActivity::class.java).apply {
                 action = ACTION_WIDGET_ENABLE_GPS
+                putExtra(EXTRA_PROMPT_ENABLE_GPS, true)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_NO_ANIMATION
             }
-            val enableGpsPendingIntent = PendingIntent.getBroadcast(
+            val homeScreenGpsPromptPendingIntent = PendingIntent.getActivity(
                 appContext,
-                203,
-                enableGpsIntent,
+                204,
+                gpsPromptActivityIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
-            // When Auto Track is ON but GPS is OFF, tapping the widget body directly prompts to turn ON GPS,
-            // while tapping the top-left O/I power switch still toggles Auto Track ON/OFF.
-            val rootPendingIntent = if (isTrackingActive && !isGpsEnabled) {
-                enableGpsPendingIntent
-            } else {
-                togglePendingIntent
+            val needsGpsOrPerm = !isGpsEnabled || !hasPerm
+            val rootPendingIntent = when {
+                // When turning ON from OFF while GPS is off, OR tapping the widget while active & GPS is off:
+                // open the translucent Home Screen GPS prompt directly over the launcher!
+                needsGpsOrPerm -> homeScreenGpsPromptPendingIntent
+                else -> togglePendingIntent
+            }
+            val powerSwitchPendingIntent = when {
+                // When currently OFF and GPS is off, tapping the O/I switch to turn ON also shows the Home Screen GPS prompt;
+                // when currently ON, tapping O/I turns Auto Track OFF silently.
+                !isTrackingActive && needsGpsOrPerm -> homeScreenGpsPromptPendingIntent
+                else -> togglePendingIntent
             }
 
             for (widgetId in widgetIds) {
                 val views = RemoteViews(appContext.packageName, R.layout.widget_moto_odo_1x1).apply {
                     setImageViewBitmap(R.id.widget_canvas_image, bitmap)
                     setOnClickPendingIntent(R.id.widget_root_container, rootPendingIntent)
-                    setOnClickPendingIntent(R.id.widget_power_toggle_btn, togglePendingIntent)
+                    setOnClickPendingIntent(R.id.widget_power_toggle_btn, powerSwitchPendingIntent)
                 }
                 appWidgetManager.updateAppWidget(widgetId, views)
             }

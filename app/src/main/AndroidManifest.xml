@@ -43,6 +43,16 @@
             </intent-filter>
         </activity>
 
+        <!-- Transparent Home-Screen Overlay Activity for 1-Tap GPS Activation from Widget -->
+        <activity
+            android:name=".widget.WidgetGpsPromptActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:launchMode="singleInstance"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <service
             android:name=".service.AutoTrackingService"
             android:enabled="true"
